@@ -1498,13 +1498,17 @@ function renderDashboard(){
   const streakClass = stats.currentStreak > 0 ? 'green' : stats.currentStreak < 0 ? 'red' : '';
   const expClass = stats.expectancy > 0 ? 'green' : stats.expectancy < 0 ? 'red' : '';
   const expSign = stats.expectancy > 0 ? '+' : '';
+  const balance = parseFloat(settings.accountBalance) || 10000;
+  const dd = calcDrawdown(filtered, balance);
+  const maxDDStr = dd.maxDD < 0 ? '-$' + Math.abs(dd.maxDD).toFixed(2) : '$0.00';
+  const avgDDStr = dd.avgDD < 0 ? '-$' + Math.abs(dd.avgDD).toFixed(2) : '$0.00';
   grid.innerHTML =
     '<div class="stat-card"><div class="stat-label">Net P&amp;L</div><div class="stat-value '+pnlClass+'">$'+stats.totalPnl.toFixed(2)+'</div></div>'+
     '<div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value accent">'+stats.winRate+'%</div></div>'+
     '<div class="stat-card"><div class="stat-label">Profit Factor</div><div class="stat-value">'+stats.pf+'</div></div>'+
     '<div class="stat-card"><div class="stat-label">Expectancy</div><div class="stat-value '+expClass+'">'+expSign+stats.expectancy.toFixed(2)+'R</div><div class="stat-sub">por trade</div></div>'+
-    '<div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value">'+stats.total+'</div></div>'+
-    '<div class="stat-card"><div class="stat-label">Streak Atual</div><div class="stat-value '+streakClass+'">'+streakSign+stats.currentStreak+'</div></div>';
+    '<div class="stat-card"><div class="stat-label">Max Drawdown</div><div class="stat-value red">'+maxDDStr+'</div><div class="stat-sub">'+dd.maxDDPct.toFixed(1)+'% do pico</div></div>'+
+    '<div class="stat-card"><div class="stat-label">Avg Drawdown</div><div class="stat-value red">'+avgDDStr+'</div><div class="stat-sub">'+dd.avgDDPct.toFixed(1)+'% do pico</div></div>';
   renderEquityChart(filtered);
   renderMonthlyChart(filtered);
   renderRecentTrades(filtered);
