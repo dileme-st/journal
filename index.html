@@ -1026,6 +1026,7 @@ function recalcRAndPnl(){
   const entry  = parseFloat($('t-entry').value);
   const sl     = parseFloat($('t-sl').value);
   const exit   = parseFloat($('t-exit').value);
+  const tp     = parseFloat($('t-tp').value);
   const risk   = parseFloat($('t-risk').value);
   const rr     = parseFloat($('t-rr').value);
   const dir    = $('t-dir').value;
@@ -1039,39 +1040,60 @@ function recalcRAndPnl(){
 
   let rValue = null;
   let mode = '';
+  const hasPrices = !isNaN(entry) && !isNaN(sl) && entry !== sl && !!dir;
+  const riskPrice = hasPrices ? Math.abs(entry - sl) : 0;
 
-  const tp = parseFloat($('t-tp').value);
-  const effectiveExit = !isNaN(exit) ? exit : tp;
-  if(!isNaN(entry) && !isNaN(sl) && !isNaN(effectiveExit) && entry !== sl && dir){
-    const riskPrice = Math.abs(entry - sl);
-    const move = dir === 'Long' ? (effectiveExit - entry) : (entry - effectiveExit);
+  // Ordem de prioridade:
+  // 1) Exit real sempre vence (é a saída de fato)
+  // 2) Loss sem Exit = perda total do risco → -1
+  // 3) BE sem Exit = 0
+  // 4) Win sem Exit: usa TP se disponível, senão R:R planejado
+  // 5) Sem resultado: se TP + preços disponíveis, mostra o R "planejado"
+
+  if(!isNaN(exit) && hasPrices){
+    const move = dir === 'Long' ? (exit - entry) : (entry - exit);
     rValue = move / riskPrice;
-    mode = !isNaN(exit) ? 'Entry/SL/Exit' : 'Entry/SL/TP (sem Exit)';
+    mode = 'Entry/SL/Exit';
   }
   else if(result === 'Loss'){
     rValue = -1;
-    mode = 'resultado Loss';
+    mode = 'resultado Loss (saída no SL)';
   }
   else if(result === 'BE'){
     rValue = 0;
     mode = 'resultado Break-even';
   }
-  else if(result === 'Win' && !isNaN(rr)){
-    rValue = Math.abs(rr);
-    mode = 'R:R planejado';
+  else if(result === 'Win'){
+    if(!isNaN(tp) && hasPrices){
+      const move = dir === 'Long' ? (tp - entry) : (entry - tp);
+      rValue = move / riskPrice;
+      mode = 'Entry/SL/TP (Win)';
+    } else if(!isNaN(rr)){
+      rValue = Math.abs(rr);
+      mode = 'R:R planejado';
+    }
+  }
+  else if(!result && !isNaN(tp) && hasPrices){
+    // Trade ainda em aberto ou sem resultado marcado: mostra o R planejado até o TP
+    const move = dir === 'Long' ? (tp - entry) : (entry - tp);
+    rValue = move / riskPrice;
+    mode = 'planejado até TP (sem resultado)';
   }
 
   if(rValue !== null){
     rField.value = rValue.toFixed(2);
     if(hint) hint.textContent = 'R = ' + rValue.toFixed(2) + 'R (auto via ' + mode + ')';
-  } else if(hint){
-    hint.textContent = 'Preencha Entry, SL, Exit, Direção e Resultado para auto-calcular.';
+  } else {
+    rField.value = '';
+    if(hint) hint.textContent = 'Preencha Entry, SL e Direção — depois marque Resultado (ou preencha Exit / TP) para auto-calcular.';
   }
 
   const rFinal = parseFloat(rField.value);
   if(!isNaN(rFinal) && !isNaN(risk) && balance > 0){
     const riskAmount = balance * risk / 100;
     pnlField.value = (rFinal * riskAmount).toFixed(2);
+  } else {
+    pnlField.value = '';
   }
 }
 
