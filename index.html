@@ -51,8 +51,12 @@ body.collapsed #main{margin-left:56px}
 .page-header h1{font-size:20px;font-weight:600;letter-spacing:-.2px}
 .page-header p{color:var(--muted);font-size:13px;margin-top:3px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
-.stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px}
-@media(max-width:1400px){.stats-grid{grid-template-columns:repeat(3,1fr)}}
+.stats-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:24px}
+@media(max-width:1600px){.stats-grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:1100px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+th.sortable{cursor:pointer;user-select:none;transition:color .15s;white-space:nowrap}
+th.sortable:hover{color:var(--text)}
+.sort-arrow{font-size:9px;margin-left:3px;color:var(--accent);display:inline-block;min-width:8px}
 .stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px}
 .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
 .stat-value{font-size:24px;font-weight:600;font-family:'DM Mono',monospace;letter-spacing:-.5px}
@@ -216,7 +220,6 @@ textarea.form-control{resize:vertical;min-height:90px}
 @media(max-width:1100px){
   .filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
   .trade-expand.open{grid-template-columns:1fr}
-  .stats-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:760px){
   :root{--sidebar:56px}
@@ -331,6 +334,10 @@ textarea.form-control{resize:vertical;min-height:90px}
       <div class="setup-card"><div class="setup-card-title">Setups A+</div><div id="aplusPerf"></div></div>
       <div class="setup-card"><div class="setup-card-title">Setups Válidos</div><div id="validPerf"></div></div>
     </div>
+    <div class="setup-perf-grid" style="margin-top:12px">
+      <div class="setup-card"><div class="setup-card-title">Performance por Ativo</div><div id="perfByAsset"></div></div>
+      <div class="setup-card"><div class="setup-card-title">Performance por Direção</div><div id="perfByDir"></div></div>
+    </div>
   </div>
 
   <div id="page-journal" class="page">
@@ -343,7 +350,15 @@ textarea.form-control{resize:vertical;min-height:90px}
     </div>
     <div class="table-wrap">
       <table><thead><tr>
-        <th>Data</th><th>Ativo</th><th>Direção</th><th>Setup</th><th>Resultado</th><th>R</th><th>P&L</th><th>Status</th><th></th>
+        <th class="sortable" data-sort="date" onclick="setJournalSort('date')">Data <span class="sort-arrow"></span></th>
+        <th class="sortable" data-sort="asset" onclick="setJournalSort('asset')">Ativo <span class="sort-arrow"></span></th>
+        <th class="sortable" data-sort="dir" onclick="setJournalSort('dir')">Direção <span class="sort-arrow"></span></th>
+        <th class="sortable" data-sort="setup" onclick="setJournalSort('setup')">Setup <span class="sort-arrow"></span></th>
+        <th class="sortable" data-sort="result" onclick="setJournalSort('result')">Resultado <span class="sort-arrow"></span></th>
+        <th class="sortable" data-sort="r" onclick="setJournalSort('r')">R <span class="sort-arrow"></span></th>
+        <th class="sortable" data-sort="pnl" onclick="setJournalSort('pnl')">P&L <span class="sort-arrow"></span></th>
+        <th class="sortable" data-sort="status" onclick="setJournalSort('status')">Status <span class="sort-arrow"></span></th>
+        <th></th>
       </tr></thead><tbody id="journalBody"></tbody></table>
     </div>
   </div>
@@ -870,6 +885,7 @@ let editingTrade = null;
 let editingWatch = null;
 let currentScreenshots = [];
 let dashboardFilters = { month:'', from:'', to:'', asset:'', setup:'', result:'' };
+let journalSort = { column: 'date', direction: 'desc' };
 const expandedTrades = new Set();
 
 function save(){
@@ -1024,11 +1040,13 @@ function recalcRAndPnl(){
   let rValue = null;
   let mode = '';
 
-  if(!isNaN(entry) && !isNaN(sl) && !isNaN(exit) && entry !== sl && dir){
+  const tp = parseFloat($('t-tp').value);
+  const effectiveExit = !isNaN(exit) ? exit : tp;
+  if(!isNaN(entry) && !isNaN(sl) && !isNaN(effectiveExit) && entry !== sl && dir){
     const riskPrice = Math.abs(entry - sl);
-    const move = dir === 'Long' ? (exit - entry) : (entry - exit);
+    const move = dir === 'Long' ? (effectiveExit - entry) : (entry - effectiveExit);
     rValue = move / riskPrice;
-    mode = 'preços Entry/SL/Exit';
+    mode = !isNaN(exit) ? 'Entry/SL/Exit' : 'Entry/SL/TP (sem Exit)';
   }
   else if(result === 'Loss'){
     rValue = -1;
@@ -1311,8 +1329,12 @@ function saveTrade(){
       createdAt: new Date().toISOString()
     };
     if(editingTrade){
-      const idx = trades.findIndex(x => x.id === editingTrade);
-      if(idx > -1) trades[idx] = trade;
+      const idx = trades.findIndex(x => String(x.id) === String(editingTrade));
+      if(idx > -1) {
+        trades[idx] = trade;
+      } else {
+        trades.unshift(trade);
+      }
     } else {
       trades.unshift(trade);
     }
@@ -1436,7 +1458,8 @@ function calcStats(tradeList = trades){
       currentStreak += lastResult === 'Win' ? 1 : -1;
     }
   }
-  return { winRate, totalPnl, avgR, pf, total: tradeList.length, closed: closed.length, currentStreak };
+  const expectancy = closed.length ? (closed.reduce((s, t) => s + signedR(t), 0) / closed.length) : 0;
+  return { winRate, totalPnl, avgR, pf, total: tradeList.length, closed: closed.length, currentStreak, expectancy };
 }
 
 function renderDashboard(){
@@ -1447,24 +1470,30 @@ function renderDashboard(){
   const pnlClass = stats.totalPnl >= 0 ? 'green' : 'red';
   const streakSign = stats.currentStreak > 0 ? '+' : '';
   const streakClass = stats.currentStreak > 0 ? 'green' : stats.currentStreak < 0 ? 'red' : '';
+  const expClass = stats.expectancy > 0 ? 'green' : stats.expectancy < 0 ? 'red' : '';
+  const expSign = stats.expectancy > 0 ? '+' : '';
   grid.innerHTML =
     '<div class="stat-card"><div class="stat-label">Net P&amp;L</div><div class="stat-value '+pnlClass+'">$'+stats.totalPnl.toFixed(2)+'</div></div>'+
     '<div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value accent">'+stats.winRate+'%</div></div>'+
     '<div class="stat-card"><div class="stat-label">Profit Factor</div><div class="stat-value">'+stats.pf+'</div></div>'+
-    '<div class="stat-card"><div class="stat-label">Avg R Multiple</div><div class="stat-value">'+stats.avgR+'R</div></div>'+
+    '<div class="stat-card"><div class="stat-label">Avg R</div><div class="stat-value">'+stats.avgR+'R</div></div>'+
+    '<div class="stat-card"><div class="stat-label">Expectancy</div><div class="stat-value '+expClass+'">'+expSign+stats.expectancy.toFixed(2)+'R</div><div class="stat-sub">por trade</div></div>'+
     '<div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value">'+stats.total+'</div></div>'+
     '<div class="stat-card"><div class="stat-label">Streak Atual</div><div class="stat-value '+streakClass+'">'+streakSign+stats.currentStreak+'</div></div>';
   renderEquityChart(filtered);
   renderMonthlyChart(filtered);
   renderRecentTrades(filtered);
   renderSetupPerf(filtered);
+  renderPerfByGroups(filtered);
 }
 
 function renderEquityChart(tradeList = getFilteredTrades(dashboardFilters)){
   const canvas = document.getElementById('equityChart');
   const { ctx, W, H } = fitCanvas(canvas);
   ctx.clearRect(0,0,W,H);
-  const closed = [...tradeList].filter(t => t.result).reverse();
+  const closed = [...tradeList]
+    .filter(t => t.result)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   if(closed.length === 0){
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.font = '13px DM Sans';
@@ -1591,13 +1620,58 @@ function renderSetupPerf(tradeList = getFilteredTrades(dashboardFilters)){
   document.getElementById('validPerf').innerHTML = perfHtml(valid);
 }
 
+function renderPerfByGroups(tradeList){
+  const closed = tradeList.filter(t => t.result);
+
+  const buildGroups = (keyFn, labelFn) => {
+    const groups = {};
+    closed.forEach(t => {
+      const k = keyFn(t);
+      if(!k) return;
+      if(!groups[k]) groups[k] = [];
+      groups[k].push(t);
+    });
+    const rows = Object.entries(groups).map(([k, arr]) => {
+      const wins = arr.filter(t => t.result === 'Win').length;
+      const wr = (wins / arr.length * 100).toFixed(0);
+      const netR = arr.reduce((s, t) => s + signedR(t), 0);
+      return { label: labelFn ? labelFn(k) : k, count: arr.length, wr, netR };
+    });
+    rows.sort((a, b) => b.netR - a.netR);
+    return rows;
+  };
+
+  const renderTable = (rows) => {
+    if(!rows.length) return '<div class="text-sm text-muted" style="padding:8px 0">Sem dados</div>';
+    return '<div style="display:grid;grid-template-columns:1fr 40px 50px 65px;gap:8px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:6px">'+
+      '<div>Nome</div><div style="text-align:right">N</div><div style="text-align:right">WR</div><div style="text-align:right">Net R</div>'+
+    '</div>'+
+    rows.map(r => '<div style="display:grid;grid-template-columns:1fr 40px 50px 65px;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border);align-items:center">'+
+      '<div style="font-weight:500;font-family:\'DM Mono\',monospace">'+esc(r.label)+'</div>'+
+      '<div style="font-family:\'DM Mono\',monospace;color:var(--muted);text-align:right">'+r.count+'</div>'+
+      '<div style="font-family:\'DM Mono\',monospace;text-align:right">'+r.wr+'%</div>'+
+      '<div style="font-family:\'DM Mono\',monospace;text-align:right;color:'+(r.netR >= 0 ? 'var(--green)' : 'var(--red)')+'">'+(r.netR >= 0 ? '+' : '')+r.netR.toFixed(1)+'R</div>'+
+    '</div>').join('');
+  };
+
+  const assetRows = buildGroups(t => t.asset);
+  const dirRows   = buildGroups(t => t.dir, k => k === 'Long' ? 'Long' : k === 'Short' ? 'Short' : k);
+
+  const aEl = document.getElementById('perfByAsset');
+  const dEl = document.getElementById('perfByDir');
+  if(aEl) aEl.innerHTML = renderTable(assetRows);
+  if(dEl) dEl.innerHTML = renderTable(dirRows);
+}
+  
 function renderJournal(){
   const tbody = document.getElementById('journalBody');
   if(!trades.length){
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:50px;color:var(--muted)">Nenhuma operação ainda. Clique em "+ Nova Operação".</td></tr>';
+    updateSortArrows();
     return;
   }
-  tbody.innerHTML = trades.map(t => {
+  const sortedTrades = sortTradesForJournal(trades);
+  tbody.innerHTML = sortedTrades.map(t => {
     const expanded = expandedTrades.has(t.id) ? 'table-row' : 'none';
     const shots = (t.screenshots && t.screenshots.length) ? t.screenshots : [t.img_htf, t.img_entry, t.img_exit].filter(Boolean);
     const shotsHtml = shots.length
@@ -1638,6 +1712,7 @@ function renderJournal(){
         '</td>'+
       '</tr>';
   }).join('');
+  updateSortArrows();
 }
 
 function tradeRow(t, expandable){
@@ -1686,6 +1761,49 @@ function toggleExpand(id){
   else expandedTrades.add(id);
 }
 
+function setJournalSort(column){
+  if(journalSort.column === column){
+    journalSort.direction = journalSort.direction === 'asc' ? 'desc' : 'asc';
+  } else {
+    journalSort.column = column;
+    journalSort.direction = 'desc';
+  }
+  renderJournal();
+}
+
+function sortTradesForJournal(list){
+  const col = journalSort.column;
+  const dir = journalSort.direction === 'asc' ? 1 : -1;
+  return [...list].sort((a, b) => {
+    let va, vb;
+    switch(col){
+      case 'date':   va = a.date || ''; vb = b.date || ''; break;
+      case 'asset':  va = a.asset || ''; vb = b.asset || ''; break;
+      case 'dir':    va = a.dir || ''; vb = b.dir || ''; break;
+      case 'setup':  va = a.setup || ''; vb = b.setup || ''; break;
+      case 'result': va = a.result || ''; vb = b.result || ''; break;
+      case 'r':      va = signedR(a); vb = signedR(b); break;
+      case 'pnl':    va = parseFloat(a.pnl) || 0; vb = parseFloat(b.pnl) || 0; break;
+      case 'status': va = a.result ? 'Encerrado' : 'Aberto'; vb = b.result ? 'Encerrado' : 'Aberto'; break;
+      default: return 0;
+    }
+    if(typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  });
+}
+
+function updateSortArrows(){
+  document.querySelectorAll('#page-journal th.sortable').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if(!arrow) return;
+    if(th.dataset.sort === journalSort.column){
+      arrow.textContent = journalSort.direction === 'asc' ? '▲' : '▼';
+    } else {
+      arrow.textContent = '';
+    }
+  });
+}
+  
 function deleteTrade(id){
   if(!confirm('Excluir esta operação?')) return;
   trades = trades.filter(t => String(t.id) !== String(id));
