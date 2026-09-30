@@ -516,10 +516,14 @@ textarea.form-control{resize:vertical;min-height:90px}
             <div class="form-group"><label for="t-tp">Take Profit</label><input type="number" id="t-tp" class="form-control" step="any" placeholder="0.00"></div>
             <div class="form-group"><label for="t-exit">Exit Price (saída real)</label><input type="number" id="t-exit" class="form-control" step="any" placeholder="Opcional — ativa auto-cálculo"></div>
             <div class="form-group"><label for="t-risk">Risco (%)</label><input type="number" id="t-risk" class="form-control" step="any" placeholder="0.5"></div>
-            <div class="form-group"><label for="t-size">Tamanho</label><input type="number" id="t-size" class="form-control" step="any" placeholder="0.01"></div>
+            <div class="form-group"><label for="t-size">Tamanho (lotes)</label><input type="number" id="t-size" class="form-control" step="any" placeholder="Auto"></div>
             <div class="form-group"><label for="t-rr">R:R Planejado</label><input type="number" id="t-rr" class="form-control" step="any" placeholder="2.5"></div>
+            <div class="form-group">
+              <label for="t-multiplier">Valor $ / 1.0 de preço / lote</label>
+              <input type="number" id="t-multiplier" class="form-control" step="any" placeholder="100000">
+            </div>
           </div>
-          <p id="calc-hint" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5">R e P&L são calculados automaticamente a partir de Entry, SL e Exit — ou estimados pelo Resultado, Risco% e Saldo da Conta.</p>
+          <p id="calc-hint" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5">R e P&L são calculados automaticamente. Tamanho e Risco% também — preencha um dos dois e o outro é calculado. 💡 Forex ≈ 100.000 · JPY ≈ 1.000 · XAU ≈ 100 · Cripto/Índices = 1</p>
         </div>
       </div>
       <div>
@@ -693,6 +697,23 @@ const SYSTEM_CONFIG = [
 ];
 const SHOT_SLOTS = ['htf','entry','exit'];
 const SHOT_INDEX = { htf:0, entry:1, exit:2 };
+
+// Valor monetário de 1.0 de movimento de preço, por 1 lote
+// Forex: 100.000 (≈ $10/pip) · JPY: 1.000 (≈ $6.7/pip @ 150) · XAU: 100 · Cripto/Índices: 1
+const ASSET_MULTIPLIER_DEFAULTS = {
+  'EURUSD': 100000, 'GBPUSD': 100000, 'AUDUSD': 100000,
+  'NZDUSD': 100000, 'USDCAD': 100000,
+  'USDJPY': 1000, 'GBPJPY': 1000,
+  'XAUUSD': 100,
+  'BTCUSD': 1, 'ETHUSD': 1, 'SOLUSD': 1,
+  'USTEC': 1, 'JP225': 1, 'US500': 1
+};
+
+function getAssetMultiplier(asset){
+  const overrides = settings.multipliers || {};
+  if(overrides[asset] !== undefined && overrides[asset] !== '') return parseFloat(overrides[asset]);
+  return ASSET_MULTIPLIER_DEFAULTS[asset] || 1;
+}
 
 // ===========================
 // GOOGLE SHEETS SYNC
@@ -900,11 +921,11 @@ function closeAllPanels(){
 }
 
 function openTradePanel(tradeId = null){
-  editingTrade = tradeId;
+  editingTrade = tradeId ? String(tradeId) : null;
   document.getElementById('tradePanelTitle').textContent = tradeId ? 'Editar Operação' : 'Nova Operação';
   clearTradeForm();
   if(tradeId){
-    const t = trades.find(x => x.id === tradeId);
+    const t = trades.find(x => String(x.id) === String(tradeId));
     if(t) populateTradeForm(t);
   } else {
     document.getElementById('t-date').value = new Date().toISOString().split('T')[0];
@@ -917,7 +938,7 @@ function openWatchPanel(watchId = null){
   document.getElementById('watchPanelTitle').textContent = watchId ? 'Editar Ativo' : 'Adicionar Ativo';
   clearWatchForm();
   if(watchId){
-    const w = watchlist.find(x => x.id === watchId);
+    const w = watchlist.find(x => String(x.id) === String(watchId));
     if(w) populateWatchForm(w);
   }
   openPanel('watchPanel');
@@ -1021,6 +1042,53 @@ function recalcRAndPnl(){
   }
 }
 
+// Calcula tamanho a partir do risco %
+function recalcSizeFromRisk(){
+  const $ = id => document.getElementById(id);
+  const entry      = parseFloat($('t-entry').value);
+  const sl         = parseFloat($('t-sl').value);
+  const risk       = parseFloat($('t-risk').value);
+  const multiplier = parseFloat($('t-multiplier').value);
+  const balance    = parseFloat(settings.accountBalance) || 0;
+
+  if(isNaN(entry) || isNaN(sl) || isNaN(risk) || isNaN(multiplier) || balance <= 0 || entry === sl || multiplier <= 0) return;
+
+  const riskMoney = balance * risk / 100;
+  const distance  = Math.abs(entry - sl);
+  const size      = riskMoney / (distance * multiplier);
+  if(size > 0 && isFinite(size)) $('t-size').value = size.toFixed(2);
+}
+
+// Calcula risco % a partir do tamanho (lotes)
+function recalcRiskFromSize(){
+  const $ = id => document.getElementById(id);
+  const entry      = parseFloat($('t-entry').value);
+  const sl         = parseFloat($('t-sl').value);
+  const size       = parseFloat($('t-size').value);
+  const multiplier = parseFloat($('t-multiplier').value);
+  const balance    = parseFloat(settings.accountBalance) || 0;
+
+  if(isNaN(entry) || isNaN(sl) || isNaN(size) || isNaN(multiplier) || balance <= 0 || entry === sl || multiplier <= 0) return;
+
+  const distance  = Math.abs(entry - sl);
+  const riskMoney = distance * size * multiplier;
+  const risk      = riskMoney / balance * 100;
+  if(risk >= 0 && isFinite(risk)) $('t-risk').value = risk.toFixed(2);
+}
+
+// Autopreenche o multiplicador ao trocar de ativo
+function syncMultiplierToAsset(){
+  const asset = document.getElementById('t-asset').value;
+  const field = document.getElementById('t-multiplier');
+  if(!field) return;
+  if(!asset){ return; }
+  const currentValue = parseFloat(field.value);
+  // Se o usuário ainda não editou o campo manualmente, atualiza com o padrão
+  if(isNaN(currentValue) || field.dataset.userEdited !== 'true'){
+    field.value = getAssetMultiplier(asset);
+  }
+}  
+
 function setupImageUploads(){
   SHOT_SLOTS.forEach(slot => {
     const wrap = document.getElementById('upload-'+slot);
@@ -1100,8 +1168,10 @@ function clearTradeForm(){
     const el = document.getElementById(id);
     if(el){ el.classList.remove('on'); el.setAttribute('aria-checked','false'); }
   });
+  const mult = document.getElementById('t-multiplier');
+  if(mult){ mult.value = ''; mult.dataset.userEdited = 'false'; }
   const hint = document.getElementById('calc-hint');
-  if(hint) hint.textContent = 'R e P&L são calculados automaticamente a partir de Entry, SL e Exit — ou estimados pelo Resultado, Risco% e Saldo da Conta.';
+  if(hint) hint.textContent = 'R e P&L são calculados automaticamente. Tamanho e Risco% também — preencha um dos dois e o outro é calculado. 💡 Forex ≈ 100.000 · JPY ≈ 1.000 · XAU ≈ 100 · Cripto/Índices = 1';
   currentScreenshots = [];
   renderScreenshots();
 }
@@ -1112,6 +1182,12 @@ function populateTradeForm(t){
   setVal('t-entry',t.entry); setVal('t-sl',t.sl); setVal('t-tp',t.tp);
   setVal('t-exit',t.exit);
   setVal('t-risk',t.risk); setVal('t-size',t.size); setVal('t-rr',t.rr);
+  const multField = document.getElementById('t-multiplier');
+  if(multField){
+    const m = t.multiplier || getAssetMultiplier(t.asset);
+    multField.value = m;
+    multField.dataset.userEdited = 'true';
+  }
   setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl);
   setVal('t-mistakes',t.mistakes); setVal('t-lessons',t.lessons); setVal('t-notes',t.notes);
   const panel = document.getElementById('tradePanel');
@@ -1200,6 +1276,7 @@ function saveTrade(){
       exit: document.getElementById('t-exit').value,
       risk: document.getElementById('t-risk').value,
       size: document.getElementById('t-size').value,
+      multiplier: document.getElementById('t-multiplier').value,
       rr: document.getElementById('t-rr').value,
       partial: document.getElementById('tog-partial').classList.contains('on'),
       be: document.getElementById('tog-be').classList.contains('on'),
@@ -1538,9 +1615,9 @@ function renderJournal(){
             '</div>'+
             shotsHtml+
             '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
-              '<button class="btn btn-ghost btn-sm" onclick="openTradePanel(\''+esc(t.id)+'\')">Editar</button>'+
-              '<button class="btn btn-ghost btn-sm" onclick="duplicateTrade(\''+esc(t.id)+'\')">Duplicar</button>'+
-              '<button class="btn btn-danger btn-sm" onclick="deleteTrade(\''+esc(t.id)+'\')">Excluir</button>'+
+              '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTradePanel(\''+esc(t.id)+'\')">Editar</button>'+
+              '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();duplicateTrade(\''+esc(t.id)+'\')">Duplicar</button>'+
+              '<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteTrade(\''+esc(t.id)+'\')">Excluir</button>'+
             '</div></div>'+
           '</div>'+
         '</td>'+
@@ -1596,7 +1673,7 @@ function toggleExpand(id){
 
 function deleteTrade(id){
   if(!confirm('Excluir esta operação?')) return;
-  trades = trades.filter(t => t.id !== id);
+  trades = trades.filter(t => String(t.id) !== String(id));
   expandedTrades.delete(id);
   save();
   syncToSheet('deleteTrade', { id });
@@ -1605,12 +1682,14 @@ function deleteTrade(id){
 }
 
 function duplicateTrade(id){
-  const t = trades.find(x => x.id === id);
+  const t = trades.find(x => String(x.id) === String(id));
   if(!t) return;
   const copy = Object.assign({}, t, { id: Date.now().toString(), createdAt: new Date().toISOString() });
   trades.unshift(copy);
   save();
+  syncToSheet('saveTrade', copy);
   renderJournal();
+  renderDashboard();
 }
 
 function renderWatchlist(){
@@ -1645,7 +1724,7 @@ function renderWatchlist(){
 
 function deleteWatch(id){
   if(!confirm('Remover da watchlist?')) return;
-  watchlist = watchlist.filter(w => w.id !== id);
+  watchlist = watchlist.filter(w => String(w.id) !== String(id));
   save();
   syncToSheet('deleteWatch', { id });
   renderWatchlist();
@@ -1683,7 +1762,7 @@ function toggleReview(id){
 
 function deleteReview(id){
   if(!confirm('Excluir esta revisão?')) return;
-  reviews = reviews.filter(r => r.id !== id);
+  reviews = reviews.filter(r => String(r.id) !== String(id));
   save();
   syncToSheet('deleteReview', { id });
   renderReviews();
@@ -1875,11 +1954,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupImageUploads();
 
-  ['t-entry','t-sl','t-tp','t-exit','t-risk','t-rr'].forEach(id => {
+  ['t-entry','t-sl','t-tp','t-exit','t-rr'].forEach(id => {
     const el = document.getElementById(id);
-    if(el) el.addEventListener('change', recalcRAndPnl);
-    if(el) el.addEventListener('input', recalcRAndPnl);
+    if(el){
+      el.addEventListener('change', recalcRAndPnl);
+      el.addEventListener('input', recalcRAndPnl);
+    }
   });
+
+  // Risk% → recalcula R/PnL E tamanho
+  const riskEl = document.getElementById('t-risk');
+  if(riskEl){
+    const handler = () => { recalcRAndPnl(); recalcSizeFromRisk(); };
+    riskEl.addEventListener('change', handler);
+    riskEl.addEventListener('input', handler);
+  }
+
+  // Size → recalcula risco %
+  const sizeEl = document.getElementById('t-size');
+  if(sizeEl){
+    sizeEl.addEventListener('change', recalcRiskFromSize);
+    sizeEl.addEventListener('input', recalcRiskFromSize);
+  }
+
+  // Entry / SL → recalcula tamanho também (se risco estiver preenchido)
+  ['t-entry','t-sl'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input', recalcSizeFromRisk);
+  });
+
+  // Multiplier: marca como editado manualmente
+  const multEl = document.getElementById('t-multiplier');
+  if(multEl){
+    multEl.addEventListener('input', () => {
+      multEl.dataset.userEdited = 'true';
+      recalcSizeFromRisk();
+    });
+  }
+
+  // Asset → autopreenche multiplicador
+  const assetEl = document.getElementById('t-asset');
+  if(assetEl){
+    assetEl.addEventListener('change', () => {
+      const multField = document.getElementById('t-multiplier');
+      if(multField) multField.dataset.userEdited = 'false';
+      syncMultiplierToAsset();
+    });
+  }
 
   const acc = document.getElementById('accountName');
   if(acc) acc.textContent = settings.accountName || 'Minha conta';
