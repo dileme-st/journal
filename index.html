@@ -391,6 +391,21 @@ textarea.form-control{resize:vertical;min-height:90px}
       </div>
       <button class="btn btn-primary btn-sm" onclick="saveAccountName()" style="margin-top:14px">Salvar</button>
     </div>
+
+    <div class="settings-section">
+      <div class="settings-title">Multiplicadores por Ativo</div>
+      <div class="info-box">
+        Valor monetário de <strong>1.0 de movimento de preço por 1 lote</strong>. Usado no cálculo automático de tamanho (lotes) e risco %. Ajuste conforme seu broker.
+        <br><br>
+        💡 Referências: <strong>Forex</strong> ≈ 100.000 · <strong>JPY</strong> ≈ 1.000 · <strong>XAUUSD</strong> ≈ 100 · <strong>Cripto / Índices</strong> = 1
+      </div>
+      <div class="filter-grid" id="multipliersGrid" style="grid-template-columns:repeat(4,minmax(150px,1fr))"></div>
+      <div class="flex gap-2" style="margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="saveMultipliers()">Salvar Multiplicadores</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetMultipliers()">Restaurar Padrões</button>
+      </div>
+    </div>
+
     <div class="settings-section">
       <div class="settings-title">Backup de Dados</div>
       <div class="info-box">Dados salvos apenas no seu navegador (localStorage). Exporte backups regularmente.</div>
@@ -1826,6 +1841,7 @@ function renderSettingsPage(){
   document.getElementById('accountInput').value = settings.accountName || '';
   const bal = document.getElementById('accountBalance');
   if(bal) bal.value = settings.accountBalance || '';
+  renderMultipliersSection();
   updateCSVFilterStatus();
 }
 
@@ -1837,7 +1853,47 @@ function saveAccountName(){
   document.getElementById('accountName').textContent = settings.accountName;
   showToast('Salvo!');
 }
+  
+function renderMultipliersSection(){
+  const grid = document.getElementById('multipliersGrid');
+  if(!grid) return;
+  const overrides = settings.multipliers || {};
+  grid.innerHTML = ASSETS.map(asset => {
+    const val = (overrides[asset] !== undefined && overrides[asset] !== '')
+      ? overrides[asset]
+      : (ASSET_MULTIPLIER_DEFAULTS[asset] || 1);
+    const isCustom = overrides[asset] !== undefined && overrides[asset] !== '' && parseFloat(overrides[asset]) !== (ASSET_MULTIPLIER_DEFAULTS[asset] || 1);
+    return '<div class="form-group">'+
+      '<label for="mult-'+asset+'" style="'+(isCustom?'color:var(--accent);':'')+'">'+asset+(isCustom?' ✱':'')+'</label>'+
+      '<input type="number" step="any" id="mult-'+asset+'" class="form-control" value="'+val+'">'+
+    '</div>';
+  }).join('');
+}
 
+function saveMultipliers(){
+  const newMultipliers = {};
+  ASSETS.forEach(asset => {
+    const el = document.getElementById('mult-'+asset);
+    if(!el) return;
+    const v = parseFloat(el.value);
+    if(!isNaN(v) && v > 0) newMultipliers[asset] = v;
+  });
+  settings.multipliers = newMultipliers;
+  save();
+  syncToSheet('saveSettings', settings);
+  renderMultipliersSection();
+  showToast('Multiplicadores salvos!');
+}
+
+function resetMultipliers(){
+  if(!confirm('Restaurar todos os multiplicadores para os valores padrão?')) return;
+  settings.multipliers = {};
+  save();
+  syncToSheet('saveSettings', settings);
+  renderMultipliersSection();
+  showToast('Multiplicadores restaurados.');
+}
+  
 function collectCSVFilters(){
   return {
     from: document.getElementById('csv-from')?.value || '',
