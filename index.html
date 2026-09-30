@@ -2254,10 +2254,8 @@ function renderSettingsPage(){
   document.getElementById('accountInput').value = settings.accountName || '';
   const bal = document.getElementById('accountBalance');
   if(bal) bal.value = settings.accountBalance || '';
-  renderPasswordSection();
   renderMultipliersSection();
 }
-
 function saveAccountName(){
   settings.accountName = document.getElementById('accountInput').value;
   settings.accountBalance = parseFloat(document.getElementById('accountBalance').value) || 0;
@@ -2473,13 +2471,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if(e.target === this) closeLightbox();
   });
 
-  if(isPasswordSet()) showLockScreen();
-  const lockInput = document.getElementById('lockInput');
-  if(lockInput){
-    lockInput.addEventListener('keydown', e => {
-      if(e.key === 'Enter') tryUnlock();
-    });
-  }
 
   document.addEventListener('keydown', e => {
     if(e.key === 'Escape'){
