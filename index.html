@@ -283,6 +283,7 @@ textarea.form-control{resize:vertical;min-height:90px}
         <h1>Dashboard</h1>
         <p>Visão geral da sua performance</p>
       </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadFromSheet()" title="Recarregar da planilha">🔄 Atualizar</button>
     </div>
     <div class="filter-card">
       <div class="filter-head">
@@ -416,6 +417,10 @@ textarea.form-control{resize:vertical;min-height:90px}
         <div class="filter-actions mt-2">
           <button class="btn btn-ghost btn-sm" onclick="resetCSVFilters()">Limpar filtros CSV</button>
         </div>
+      </div>
+      <div class="flex gap-2" style="flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn btn-primary btn-sm" onclick="syncAllToSheet()">☁️ Enviar tudo para Planilha</button>
+        <button class="btn btn-primary btn-sm" onclick="loadFromSheet()">⬇️ Carregar da Planilha</button>
       </div>
       <div class="flex gap-2" style="flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="exportData()">Exportar JSON</button>
@@ -688,6 +693,66 @@ const SYSTEM_CONFIG = [
 ];
 const SHOT_SLOTS = ['htf','entry','exit'];
 const SHOT_INDEX = { htf:0, entry:1, exit:2 };
+
+// ===========================
+// GOOGLE SHEETS SYNC
+// ===========================
+const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxotTubk-Tsg_XwicQKEN6mdH7PwfgJeJKUnqAEncJvqflcvBf9t2JYzaz-CYOOskXh/exec';
+
+async function syncToSheet(action, data){
+  if(!SHEET_WEBHOOK_URL) return;
+  try {
+    await fetch(SHEET_WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, data })
+    });
+  } catch(e){
+    console.warn('Sync failed:', action, e);
+  }
+}
+
+async function syncAllToSheet(){
+  if(!SHEET_WEBHOOK_URL){ showToast('Configure a URL do Apps Script primeiro.'); return; }
+  showToast('Enviando para a planilha...');
+  let count = 0;
+  for(const t of trades)    { await syncToSheet('saveTrade',  t); count++; }
+  for(const w of watchlist) { await syncToSheet('saveWatch',  w); count++; }
+  for(const r of reviews)   { await syncToSheet('saveReview', r); count++; }
+  await syncToSheet('saveSystem',   systemData);
+  await syncToSheet('saveSettings', settings);
+  showToast('Enviado: '+count+' registros.');
+}
+
+async function loadFromSheet(silent){
+  if(!SHEET_WEBHOOK_URL){
+    if(!silent) showToast('Configure a URL do Apps Script primeiro.');
+    return;
+  }
+  if(!silent && !confirm('Substituir os dados locais pelos dados da planilha?')) return;
+  try {
+    const res  = await fetch(SHEET_WEBHOOK_URL + '?action=getAll');
+    const data = await res.json();
+    if(data.status !== 'success'){
+      if(!silent) showToast('Erro: '+(data.message || 'desconhecido'));
+      return;
+    }
+    if(Array.isArray(data.trades))    trades    = data.trades;
+    if(Array.isArray(data.watchlist)) watchlist = data.watchlist;
+    if(Array.isArray(data.reviews))   reviews   = data.reviews;
+    if(data.system && Object.keys(data.system).length) systemData = data.system;
+    if(data.settings) settings = Object.assign({}, settings, data.settings);
+    save();
+    const acc = document.getElementById('accountName');
+    if(acc) acc.textContent = settings.accountName || 'Minha conta';
+    renderDashboard();
+    if(!silent) showToast('Dados carregados da planilha!');
+  } catch(e){
+    if(!silent) showToast('Erro ao carregar: '+e.message);
+    console.warn('Load failed:', e);
+  }
+}
 
 function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1160,6 +1225,7 @@ function saveTrade(){
       trades.unshift(trade);
     }
     save();
+    syncToSheet('saveTrade', trade);
     closePanel('tradePanel');
     renderJournal();
     renderDashboard();
@@ -1187,6 +1253,7 @@ function saveWatch(){
     watchlist.unshift(w);
   }
   save();
+  syncToSheet('saveWatch', w);
   closePanel('watchPanel');
   renderWatchlist();
 }
@@ -1206,6 +1273,7 @@ function saveReview(){
   };
   reviews.unshift(r);
   save();
+  syncToSheet('saveReview', r);
   closePanel('weeklyPanel');
   renderReviews();
 }
@@ -1531,6 +1599,7 @@ function deleteTrade(id){
   trades = trades.filter(t => t.id !== id);
   expandedTrades.delete(id);
   save();
+  syncToSheet('deleteTrade', { id });
   renderJournal();
   renderDashboard();
 }
@@ -1578,6 +1647,7 @@ function deleteWatch(id){
   if(!confirm('Remover da watchlist?')) return;
   watchlist = watchlist.filter(w => w.id !== id);
   save();
+  syncToSheet('deleteWatch', { id });
   renderWatchlist();
 }
 
@@ -1615,6 +1685,7 @@ function deleteReview(id){
   if(!confirm('Excluir esta revisão?')) return;
   reviews = reviews.filter(r => r.id !== id);
   save();
+  syncToSheet('deleteReview', { id });
   renderReviews();
 }
 
@@ -1645,12 +1716,14 @@ function updateSystemItem(key,i,val){
   if(!systemData[key]) return;
   systemData[key][i] = val;
   save();
+  syncToSheet('saveSystem', systemData);
 }
 
 function addSystemItem(key){
   if(!systemData[key]) systemData[key] = [];
   systemData[key].push('');
   save();
+  syncToSheet('saveSystem', systemData);
   renderSystem();
   setTimeout(() => {
     const c = document.getElementById('sys-items-'+key);
@@ -1666,6 +1739,7 @@ function deleteSystemItem(key,i){
   if(!systemData[key]) return;
   systemData[key].splice(i,1);
   save();
+  syncToSheet('saveSystem', systemData);
   renderSystem();
 }
 
@@ -1680,6 +1754,7 @@ function saveAccountName(){
   settings.accountName = document.getElementById('accountInput').value;
   settings.accountBalance = parseFloat(document.getElementById('accountBalance').value) || 0;
   save();
+  syncToSheet('saveSettings', settings);
   document.getElementById('accountName').textContent = settings.accountName;
   showToast('Salvo!');
 }
@@ -1816,7 +1891,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sidebar').classList.add('collapsed');
     document.body.classList.add('collapsed');
   }
-
+  
+  if(SHEET_WEBHOOK_URL) loadFromSheet(true);
   const lastPage = DB.get('sj_lastpage', 'dashboard');
   const btn = document.querySelector('.nav-item[data-page="'+lastPage+'"]');
   if(btn && lastPage !== 'dashboard'){
