@@ -116,6 +116,7 @@ tbody td{padding:11px 16px;font-size:13px;color:var(--text)}
 select.form-control{cursor:pointer}
 textarea.form-control{resize:vertical;min-height:90px}
 .form-control::placeholder{color:rgba(255,255,255,0.2)}
+.form-control[readonly]{background:rgba(96,165,250,.06);border-color:rgba(96,165,250,.2);color:var(--accent)}
 .radio-group,.check-group{display:flex;gap:8px;flex-wrap:wrap}
 .radio-btn{padding:7px 14px;border-radius:7px;background:var(--bg);border:1px solid var(--border2);color:var(--muted);cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;transition:all .15s}
 .radio-btn:hover{border-color:var(--border2);color:var(--text)}
@@ -277,9 +278,11 @@ textarea.form-control{resize:vertical;min-height:90px}
 <main id="main">
 
   <div id="page-dashboard" class="page active">
-    <div class="page-header">
-      <h1>Dashboard</h1>
-      <p>Visão geral da sua performance</p>
+    <div class="page-header flex items-center justify-between">
+      <div>
+        <h1>Dashboard</h1>
+        <p>Visão geral da sua performance</p>
+      </div>
     </div>
     <div class="filter-card">
       <div class="filter-head">
@@ -375,11 +378,17 @@ textarea.form-control{resize:vertical;min-height:90px}
     <div class="page-header"><h1>Configurações & Backup</h1></div>
     <div class="settings-section">
       <div class="settings-title">Conta</div>
-      <div class="form-group mb-4">
-        <label for="accountInput">Nome da Conta</label>
-        <input class="form-control" id="accountInput" placeholder="Nome do trader..." style="max-width:320px">
+      <div class="form-grid cols2" style="max-width:600px">
+        <div class="form-group">
+          <label for="accountInput">Nome da Conta</label>
+          <input class="form-control" id="accountInput" placeholder="Nome do trader...">
+        </div>
+        <div class="form-group">
+          <label for="accountBalance">Saldo da Conta ($)</label>
+          <input class="form-control" id="accountBalance" type="number" step="any" placeholder="10000">
+        </div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="saveAccountName()">Salvar Nome</button>
+      <button class="btn btn-primary btn-sm" onclick="saveAccountName()" style="margin-top:14px">Salvar</button>
     </div>
     <div class="settings-section">
       <div class="settings-title">Backup de Dados</div>
@@ -500,10 +509,12 @@ textarea.form-control{resize:vertical;min-height:90px}
             <div class="form-group"><label for="t-entry">Entry Price</label><input type="number" id="t-entry" class="form-control" step="any" placeholder="0.00"></div>
             <div class="form-group"><label for="t-sl">Stop Loss</label><input type="number" id="t-sl" class="form-control" step="any" placeholder="0.00"></div>
             <div class="form-group"><label for="t-tp">Take Profit</label><input type="number" id="t-tp" class="form-control" step="any" placeholder="0.00"></div>
+            <div class="form-group"><label for="t-exit">Exit Price (saída real)</label><input type="number" id="t-exit" class="form-control" step="any" placeholder="Opcional — ativa auto-cálculo"></div>
             <div class="form-group"><label for="t-risk">Risco (%)</label><input type="number" id="t-risk" class="form-control" step="any" placeholder="0.5"></div>
             <div class="form-group"><label for="t-size">Tamanho</label><input type="number" id="t-size" class="form-control" step="any" placeholder="0.01"></div>
             <div class="form-group"><label for="t-rr">R:R Planejado</label><input type="number" id="t-rr" class="form-control" step="any" placeholder="2.5"></div>
           </div>
+          <p id="calc-hint" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5">R e P&L são calculados automaticamente a partir de Entry, SL e Exit — ou estimados pelo Resultado, Risco% e Saldo da Conta.</p>
         </div>
       </div>
       <div>
@@ -526,8 +537,8 @@ textarea.form-control{resize:vertical;min-height:90px}
             <input type="hidden" id="t-result">
           </div>
           <div class="form-grid cols2">
-            <div class="form-group"><label for="t-rmult">R Multiple Final</label><input type="number" id="t-rmult" class="form-control" step="any" placeholder="2.1"></div>
-            <div class="form-group"><label for="t-pnl">P&L Líquido ($)</label><input type="number" id="t-pnl" class="form-control" step="any" placeholder="0.00"></div>
+            <div class="form-group"><label for="t-rmult">R Multiple Final</label><input type="number" id="t-rmult" class="form-control" step="any" placeholder="Auto" readonly></div>
+            <div class="form-group"><label for="t-pnl">P&L Líquido ($)</label><input type="number" id="t-pnl" class="form-control" step="any" placeholder="Auto" readonly></div>
           </div>
           <div class="form-group mt-2"><label for="t-mistakes">Erros cometidos</label><textarea id="t-mistakes" class="form-control" placeholder="Descreva erros ou desvios do plano..."></textarea></div>
           <div class="form-group"><label for="t-lessons">Lições aprendidas</label><textarea id="t-lessons" class="form-control" placeholder="O que ficou de aprendizado..."></textarea></div>
@@ -753,7 +764,7 @@ let trades = DB.get('sj_trades', []);
 let watchlist = DB.get('sj_watchlist', []);
 let reviews = DB.get('sj_reviews', []);
 let systemData = DB.get('sj_system', getDefaultSystem());
-let settings = DB.get('sj_settings', { accountName:'Minha conta' });
+let settings = DB.get('sj_settings', { accountName:'Minha conta', accountBalance: 10000 });
 let editingTrade = null;
 let editingWatch = null;
 let currentScreenshots = [];
@@ -874,6 +885,7 @@ function selectRadio(btn){
   btn.setAttribute('aria-pressed','true');
   const hidden = document.getElementById(field);
   if(hidden) hidden.value = value;
+  if(field === 't-dir' || field === 't-result') recalcRAndPnl();
 }
 
 function toggleEl(el){
@@ -890,6 +902,58 @@ function setRadioValue(fieldId, value, scopeEl){
     b.classList.toggle('selected', sel);
     b.setAttribute('aria-pressed', sel ? 'true' : 'false');
   });
+}
+
+function recalcRAndPnl(){
+  const $ = id => document.getElementById(id);
+  const entry  = parseFloat($('t-entry').value);
+  const sl     = parseFloat($('t-sl').value);
+  const exit   = parseFloat($('t-exit').value);
+  const risk   = parseFloat($('t-risk').value);
+  const rr     = parseFloat($('t-rr').value);
+  const dir    = $('t-dir').value;
+  const result = $('t-result').value;
+  const balance = parseFloat(settings.accountBalance) || 0;
+
+  const rField   = $('t-rmult');
+  const pnlField = $('t-pnl');
+  const hint     = $('calc-hint');
+  if(!rField) return;
+
+  let rValue = null;
+  let mode = '';
+
+  if(!isNaN(entry) && !isNaN(sl) && !isNaN(exit) && entry !== sl && dir){
+    const riskPrice = Math.abs(entry - sl);
+    const move = dir === 'Long' ? (exit - entry) : (entry - exit);
+    rValue = move / riskPrice;
+    mode = 'preços Entry/SL/Exit';
+  }
+  else if(result === 'Loss'){
+    rValue = -1;
+    mode = 'resultado Loss';
+  }
+  else if(result === 'BE'){
+    rValue = 0;
+    mode = 'resultado Break-even';
+  }
+  else if(result === 'Win' && !isNaN(rr)){
+    rValue = Math.abs(rr);
+    mode = 'R:R planejado';
+  }
+
+  if(rValue !== null){
+    rField.value = rValue.toFixed(2);
+    if(hint) hint.textContent = 'R = ' + rValue.toFixed(2) + 'R (auto via ' + mode + ')';
+  } else if(hint){
+    hint.textContent = 'Preencha Entry, SL, Exit, Direção e Resultado para auto-calcular.';
+  }
+
+  const rFinal = parseFloat(rField.value);
+  if(!isNaN(rFinal) && !isNaN(risk) && balance > 0){
+    const riskAmount = balance * risk / 100;
+    pnlField.value = (rFinal * riskAmount).toFixed(2);
+  }
 }
 
 function setupImageUploads(){
@@ -951,7 +1015,7 @@ function renderScreenshots(){
 }
 
 function clearTradeForm(){
-  ['t-date','t-asset','t-entry','t-sl','t-tp','t-risk','t-size','t-rr','t-rmult','t-pnl','t-mistakes','t-lessons','t-notes'].forEach(id => {
+  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-mistakes','t-lessons','t-notes'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
@@ -971,6 +1035,8 @@ function clearTradeForm(){
     const el = document.getElementById(id);
     if(el){ el.classList.remove('on'); el.setAttribute('aria-checked','false'); }
   });
+  const hint = document.getElementById('calc-hint');
+  if(hint) hint.textContent = 'R e P&L são calculados automaticamente a partir de Entry, SL e Exit — ou estimados pelo Resultado, Risco% e Saldo da Conta.';
   currentScreenshots = [];
   renderScreenshots();
 }
@@ -979,6 +1045,7 @@ function populateTradeForm(t){
   const setVal = (id,val) => { const el = document.getElementById(id); if(el) el.value = val ?? ''; };
   setVal('t-date',t.date); setVal('t-asset',t.asset);
   setVal('t-entry',t.entry); setVal('t-sl',t.sl); setVal('t-tp',t.tp);
+  setVal('t-exit',t.exit);
   setVal('t-risk',t.risk); setVal('t-size',t.size); setVal('t-rr',t.rr);
   setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl);
   setVal('t-mistakes',t.mistakes); setVal('t-lessons',t.lessons); setVal('t-notes',t.notes);
@@ -1065,6 +1132,7 @@ function saveTrade(){
       entry: document.getElementById('t-entry').value,
       sl: document.getElementById('t-sl').value,
       tp: document.getElementById('t-tp').value,
+      exit: document.getElementById('t-exit').value,
       risk: document.getElementById('t-risk').value,
       size: document.getElementById('t-size').value,
       rr: document.getElementById('t-rr').value,
@@ -1383,6 +1451,7 @@ function renderJournal(){
               '<div class="expand-row"><span class="k">Entry</span><span class="v">'+(esc(t.entry)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">Stop Loss</span><span class="v">'+(esc(t.sl)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">Take Profit</span><span class="v">'+(esc(t.tp)||'—')+'</span></div>'+
+              '<div class="expand-row"><span class="k">Exit</span><span class="v">'+(esc(t.exit)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">Risco</span><span class="v">'+(esc(t.risk)||'—')+'%</span></div>'+
               '<div class="expand-row"><span class="k">Tamanho</span><span class="v">'+(esc(t.size)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">R:R</span><span class="v">'+(esc(t.rr)||'—')+'</span></div>'+
@@ -1602,14 +1671,17 @@ function deleteSystemItem(key,i){
 
 function renderSettingsPage(){
   document.getElementById('accountInput').value = settings.accountName || '';
+  const bal = document.getElementById('accountBalance');
+  if(bal) bal.value = settings.accountBalance || '';
   updateCSVFilterStatus();
 }
 
 function saveAccountName(){
   settings.accountName = document.getElementById('accountInput').value;
+  settings.accountBalance = parseFloat(document.getElementById('accountBalance').value) || 0;
   save();
   document.getElementById('accountName').textContent = settings.accountName;
-  showToast('Nome salvo!');
+  showToast('Salvo!');
 }
 
 function collectCSVFilters(){
@@ -1639,11 +1711,11 @@ function resetCSVFilters(){
 }
 
 function exportCSV(){
-  const headers = ['Date','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Risk %','RR Planned','RR Final','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
+  const headers = ['Date','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Exit','Risk %','RR Planned','RR Final','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
   const escapeCSV = v => '"'+String(v ?? '').replace(/"/g,'""')+'"';
   const rows = getFilteredTrades(collectCSVFilters()).map(t => {
     const confluences = Object.entries(t.checks||{}).filter(([k,v]) => v && CHECK_LABELS_CSV[k]).map(([k]) => CHECK_LABELS_CSV[k]).join('; ');
-    return [t.date||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.risk||'',t.rr||'',t.rmult||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
+    return [t.date||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.exit||'',t.risk||'',t.rr||'',t.rmult||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
   });
   const csv = [headers.map(escapeCSV).join(','), ...rows].join('\n');
   const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
@@ -1696,7 +1768,7 @@ function clearAllData(){
   if(!confirm('Segunda confirmação: apagar tudo?')) return;
   trades = []; watchlist = []; reviews = [];
   systemData = getDefaultSystem();
-  settings = { accountName:'Minha conta' };
+  settings = { accountName:'Minha conta', accountBalance:10000 };
   save();
   renderDashboard();
   showToast('Dados apagados.');
@@ -1728,8 +1800,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupImageUploads();
 
+  ['t-entry','t-sl','t-tp','t-exit','t-risk','t-rr'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('change', recalcRAndPnl);
+    if(el) el.addEventListener('input', recalcRAndPnl);
+  });
+
   const acc = document.getElementById('accountName');
   if(acc) acc.textContent = settings.accountName || 'Minha conta';
+
+  const balInput = document.getElementById('accountBalance');
+  if(balInput) balInput.value = settings.accountBalance || '';
 
   if(DB.get('sj_sidebar_collapsed', false)){
     document.getElementById('sidebar').classList.add('collapsed');
