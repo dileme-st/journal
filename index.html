@@ -228,9 +228,7 @@ textarea.form-control{resize:vertical;min-height:90px}
   .logo-text,.nav-label,.account-name{display:none}
   .sidebar-top{justify-content:center;padding:20px 8px 12px}
   .sidebar-toggle{display:none}
-  .page{padding:22px 16px}
-  .panel-sm,.panel-lg{width:min(100vw,560px)}
-  .panel-body{padding:18px}
+  .page{padding:22px 16px calc(80px + env(safe-area-inset-bottom, 0px))}
   .form-grid.cols2,.form-grid.cols3,.filter-grid{grid-template-columns:1fr!important}
   .stats-grid,.setup-perf-grid{grid-template-columns:1fr}
   .table-wrap{overflow-x:auto}
