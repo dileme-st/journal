@@ -22,7 +22,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);fon
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:99px}
 :focus-visible{outline:2px solid var(--accent2);outline-offset:2px;border-radius:4px}
-#sidebar{width:var(--sidebar);min-width:var(--sidebar);height:100vh;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;left:0;top:0;z-index:100;transition:width .25s ease,min-width .25s ease;overflow:hidden}
+#sidebar{width:var(--sidebar);min-width:var(--sidebar);height:100vh;height:100dvh;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;left:0;top:0;z-index:100;transition:width .25s ease,min-width .25s ease;overflow:hidden}
 #sidebar.collapsed{width:56px;min-width:56px}
 .sidebar-top{padding:20px 16px 12px;display:flex;align-items:center;gap:10px;white-space:nowrap;min-height:60px}
 .logo-mark{width:28px;height:28px;min-width:28px;background:var(--accent2);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#fff;flex-shrink:0}
@@ -43,7 +43,7 @@ nav{flex:1;padding:8px 8px;overflow-y:auto;overflow-x:hidden}
 .sidebar-bottom{padding:12px 8px;border-top:1px solid var(--border)}
 .account-name{font-size:11px;color:var(--muted);padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #sidebar.collapsed .account-name{display:none}
-#main{margin-left:var(--sidebar);flex:1;height:100vh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease}
+#main{margin-left:var(--sidebar);flex:1;height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease;-webkit-overflow-scrolling:touch}
 body.collapsed #main{margin-left:56px}
 .page{display:none;padding:32px 36px;min-height:100%}
 .page.active{display:block}
