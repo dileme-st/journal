@@ -51,8 +51,8 @@ body.collapsed #main{margin-left:56px}
 .page-header h1{font-size:20px;font-weight:600;letter-spacing:-.2px}
 .page-header p{color:var(--muted);font-size:13px;margin-top:3px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
-.stats-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:24px}
-@media(max-width:1600px){.stats-grid{grid-template-columns:repeat(4,1fr)}}
+.stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px}
+@media(max-width:1600px){.stats-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:1100px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
 th.sortable{cursor:pointer;user-select:none;transition:color .15s;white-space:nowrap}
 th.sortable:hover{color:var(--text)}
@@ -1468,20 +1468,20 @@ function calcStats(tradeList = trades){
   const losses = closed.filter(t => t.result === 'Loss');
   const winRate = closed.length ? (wins.length/closed.length*100).toFixed(1) : 0;
   const totalPnl = closed.reduce((s,t) => s + (parseFloat(t.pnl)||0), 0);
-  const avgR = closed.length ? (closed.reduce((s,t) => s + signedR(t), 0)/closed.length).toFixed(2) : 0;
   const grossWin = wins.reduce((s,t) => s + Math.abs(parseFloat(t.pnl)||0), 0);
   const grossLoss = losses.reduce((s,t) => s + Math.abs(parseFloat(t.pnl)||0), 0);
   const pf = grossLoss ? (grossWin/grossLoss).toFixed(2) : grossWin > 0 ? '∞' : 0;
   let currentStreak = 0;
-  const lastResult = closed[0]?.result;
+  const closedByDate = [...closed].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const lastResult = closedByDate[0]?.result;
   if(lastResult){
-    for(const t of closed){
+    for(const t of closedByDate){
       if(t.result !== lastResult) break;
       currentStreak += lastResult === 'Win' ? 1 : -1;
     }
   }
   const expectancy = closed.length ? (closed.reduce((s, t) => s + signedR(t), 0) / closed.length) : 0;
-  return { winRate, totalPnl, avgR, pf, total: tradeList.length, closed: closed.length, currentStreak, expectancy };
+  return { winRate, totalPnl, pf, total: tradeList.length, closed: closed.length, currentStreak, expectancy };
 }
 
 function renderDashboard(){
@@ -1498,7 +1498,6 @@ function renderDashboard(){
     '<div class="stat-card"><div class="stat-label">Net P&amp;L</div><div class="stat-value '+pnlClass+'">$'+stats.totalPnl.toFixed(2)+'</div></div>'+
     '<div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value accent">'+stats.winRate+'%</div></div>'+
     '<div class="stat-card"><div class="stat-label">Profit Factor</div><div class="stat-value">'+stats.pf+'</div></div>'+
-    '<div class="stat-card"><div class="stat-label">Avg R</div><div class="stat-value">'+stats.avgR+'R</div></div>'+
     '<div class="stat-card"><div class="stat-label">Expectancy</div><div class="stat-value '+expClass+'">'+expSign+stats.expectancy.toFixed(2)+'R</div><div class="stat-sub">por trade</div></div>'+
     '<div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value">'+stats.total+'</div></div>'+
     '<div class="stat-card"><div class="stat-label">Streak Atual</div><div class="stat-value '+streakClass+'">'+streakSign+stats.currentStreak+'</div></div>';
