@@ -171,8 +171,8 @@ textarea.form-control{resize:vertical;min-height:90px}
 .cal-week.negative{border-color:rgba(239,68,68,0.3)}
 .cal-week.positive .cal-value{color:var(--green)}
 .cal-week.negative .cal-value{color:var(--red)}
-.setup-perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.setup-perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.setup-perf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}   /// SE DER ERRADO APAGAR ESSE ///
+.setup-perf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .setup-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:16px}
 .setup-card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px}
 .perf-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
@@ -377,8 +377,10 @@ textarea.form-control{resize:vertical;min-height:90px}
       </tr></thead><tbody id="recentTradesBody"></tbody></table>
     </div>
     <div class="setup-perf-grid">
+    <div class="setup-perf-grid">
       <div class="setup-card"><div class="setup-card-title">Setups A+</div><div id="aplusPerf"></div></div>
       <div class="setup-card"><div class="setup-card-title">Setups Válidos</div><div id="validPerf"></div></div>
+      <div class="setup-card"><div class="setup-card-title">Holding Period</div><div id="holdingPerf"></div></div>
     </div>
     <div class="setup-perf-grid" style="margin-top:12px">
       <div class="setup-card"><div class="setup-card-title">Performance por Ativo</div><div id="perfByAsset"></div></div>
@@ -571,6 +573,7 @@ textarea.form-control{resize:vertical;min-height:90px}
             <div class="form-group"><label for="t-risk">Risco (%)</label><input type="number" id="t-risk" class="form-control" step="any" placeholder="0.5"></div>
             <div class="form-group"><label for="t-size">Tamanho (lotes)</label><input type="number" id="t-size" class="form-control" step="any" placeholder="Auto"></div>
             <div class="form-group"><label for="t-rr">R:R Planejado</label><input type="number" id="t-rr" class="form-control" step="any" placeholder="2.5"></div>
+            <div class="form-group"><label for="t-holding">Holding Period (horas)</label><input type="number" id="t-holding" class="form-control" step="any" placeholder="Ex: 48 = 2 dias"></div>
             <div class="form-group">
               <label for="t-multiplier">Valor $ / 1.0 de preço / lote</label>
               <input type="number" id="t-multiplier" class="form-control" step="any" placeholder="100000">
@@ -1228,7 +1231,7 @@ function renderScreenshots(){
 }
 
 function clearTradeForm(){
-  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-mistakes','t-lessons','t-notes'].forEach(id => {
+  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-holding','t-mistakes','t-lessons','t-notes'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
@@ -1268,7 +1271,7 @@ function populateTradeForm(t){
     multField.value = m;
     multField.dataset.userEdited = 'true';
   }
-  setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl);
+  setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl); setVal('t-holding',t.holding);
   setVal('t-mistakes',t.mistakes); setVal('t-lessons',t.lessons); setVal('t-notes',t.notes);
   const panel = document.getElementById('tradePanel');
   ['dir','setup','bias','result'].forEach(k => setRadioValue('t-'+k, t[k], panel));
@@ -1358,6 +1361,7 @@ function saveTrade(){
       size: document.getElementById('t-size').value,
       multiplier: document.getElementById('t-multiplier').value,
       rr: document.getElementById('t-rr').value,
+      holding: document.getElementById('t-holding').value,
       partial: document.getElementById('tog-partial').classList.contains('on'),
       be: document.getElementById('tog-be').classList.contains('on'),
       trail: document.getElementById('tog-trail').classList.contains('on'),
@@ -1563,6 +1567,7 @@ function renderDashboard(){
   renderMonthlyChart(filtered);
   renderRecentTrades(filtered);
   renderSetupPerf(filtered);
+  renderHoldingPerf(filtered);
   renderPerfByGroups(filtered);
   renderCalendar(filtered);
 }
@@ -1700,6 +1705,41 @@ function renderSetupPerf(tradeList = getFilteredTrades(dashboardFilters)){
   document.getElementById('validPerf').innerHTML = perfHtml(valid);
 }
 
+function renderHoldingPerf(tradeList){
+  const el = document.getElementById('holdingPerf');
+  if(!el) return;
+  const closed = tradeList.filter(t => t.result && t.holding && parseFloat(t.holding) > 0);
+  if(!closed.length){
+    el.innerHTML = '<div class="text-sm text-muted" style="padding:8px 0">Sem dados (preencha Holding Period nos trades)</div>';
+    return;
+  }
+  const winners = closed.filter(t => t.result === 'Win');
+  const losers  = closed.filter(t => t.result === 'Loss');
+  const avg = arr => arr.length ? (arr.reduce((s,t) => s + parseFloat(t.holding), 0) / arr.length) : 0;
+  const avgW = avg(winners);
+  const avgL = avg(losers);
+
+  const fmtH = h => {
+    if(!h) return '—';
+    if(h < 24) return h.toFixed(1) + 'h';
+    return (h/24).toFixed(1) + 'd';
+  };
+
+  let ratioText = '';
+  if(avgW && avgL){
+    const ratio = avgW / avgL;
+    ratioText = ratio >= 1
+      ? `Winners duram <span style="color:var(--green)">${ratio.toFixed(1)}×</span> mais`
+      : `Losers duram <span style="color:var(--red)">${(1/ratio).toFixed(1)}×</span> mais`;
+  }
+
+  el.innerHTML =
+    '<div class="perf-row"><span class="k">Trades com holding</span><span class="v">'+closed.length+'</span></div>'+
+    '<div class="perf-row"><span class="k">Média Winners</span><span class="v" style="color:var(--green)">'+fmtH(avgW)+'</span></div>'+
+    '<div class="perf-row"><span class="k">Média Losers</span><span class="v" style="color:var(--red)">'+fmtH(avgL)+'</span></div>'+
+    '<div class="perf-row" style="margin-top:4px"><span class="k" style="font-size:11px">'+ratioText+'</span><span class="v"></span></div>';
+}
+  
 function renderPerfByGroups(tradeList){
   const closed = tradeList.filter(t => t.result);
 
@@ -2225,11 +2265,11 @@ function resetCSVFilters(){
 }
 
 function exportCSV(){
-  const headers = ['Date','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Exit','Risk %','RR Planned','RR Final','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
+  const headers = ['Date','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Exit','Risk %','RR Planned','RR Final','Holding (h)','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
   const escapeCSV = v => '"'+String(v ?? '').replace(/"/g,'""')+'"';
   const rows = getFilteredTrades(collectCSVFilters()).map(t => {
     const confluences = Object.entries(t.checks||{}).filter(([k,v]) => v && CHECK_LABELS_CSV[k]).map(([k]) => CHECK_LABELS_CSV[k]).join('; ');
-    return [t.date||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.exit||'',t.risk||'',t.rr||'',t.rmult||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
+    return [t.date||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.exit||'',t.risk||'',t.rr||'',t.rmult||'',t.holding||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
   });
   const csv = [headers.map(escapeCSV).join(','), ...rows].join('\n');
   const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
