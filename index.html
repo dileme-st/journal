@@ -422,30 +422,7 @@ textarea.form-control{resize:vertical;min-height:90px}
     <div class="settings-section">
       <div class="settings-title">Backup de Dados</div>
       <div class="info-box">Dados salvos apenas no seu navegador (localStorage). Exporte backups regularmente.</div>
-      <div class="filter-card" style="margin-bottom:16px">
-        <div class="filter-head">
-          <div class="filter-title">Filtros para CSV</div>
-          <div class="filter-status" id="csvFilterStatus">Exporta todos os trades estruturados</div>
-        </div>
-        <div class="filter-grid" style="grid-template-columns:repeat(5,minmax(130px,1fr))">
-          <div class="form-group"><label for="csv-from">Data inicial</label><input type="date" id="csv-from" class="form-control" onchange="updateCSVFilterStatus()"></div>
-          <div class="form-group"><label for="csv-to">Data final</label><input type="date" id="csv-to" class="form-control" onchange="updateCSVFilterStatus()"></div>
-          <div class="form-group"><label for="csv-asset">Ativo</label><select id="csv-asset" class="form-control" data-asset-select data-empty-label="Todos" onchange="updateCSVFilterStatus()"></select></div>
-          <div class="form-group"><label for="csv-setup">Setup</label>
-            <select id="csv-setup" class="form-control" onchange="updateCSVFilterStatus()">
-              <option value="">Todos</option><option value="A+">A+</option><option value="Valid">Válido</option>
-            </select>
-          </div>
-          <div class="form-group"><label for="csv-result">Resultado</label>
-            <select id="csv-result" class="form-control" onchange="updateCSVFilterStatus()">
-              <option value="">Todos</option><option value="Win">Win</option><option value="Loss">Loss</option><option value="BE">Break-even</option>
-            </select>
-          </div>
-        </div>
-        <div class="filter-actions mt-2">
-          <button class="btn btn-ghost btn-sm" onclick="resetCSVFilters()">Limpar filtros CSV</button>
-        </div>
-      </div>
+
       <div class="flex gap-2" style="flex-wrap:wrap;margin-bottom:10px">
         <button class="btn btn-primary btn-sm" onclick="syncAllToSheet()">☁️ Enviar tudo para Planilha</button>
         <button class="btn btn-primary btn-sm" onclick="loadFromSheet()">⬇️ Carregar da Planilha</button>
