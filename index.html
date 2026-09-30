@@ -1459,6 +1459,35 @@ function calcStats(tradeList = trades){
   return { winRate, totalPnl, pf, total: tradeList.length, closed: closed.length, currentStreak, expectancy };
 }
 
+ function calcDrawdown(tradeList, startingBalance){
+  const closed = tradeList
+    .filter(t => t.result)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  if(!closed.length) return { maxDD: 0, avgDD: 0, currentDD: 0, maxDDPct: 0, avgDDPct: 0 };
+
+  let equity = startingBalance;
+  let peak = equity;
+  const drawdowns = [];
+  let maxDD = 0, maxDDPct = 0;
+
+  closed.forEach(t => {
+    equity += parseFloat(t.pnl) || 0;
+    if(equity > peak) peak = equity;
+    const dd = equity - peak;
+    const ddPct = peak > 0 ? dd / peak * 100 : 0;
+    drawdowns.push({ dd, ddPct });
+    if(dd < maxDD) maxDD = dd;
+    if(ddPct < maxDDPct) maxDDPct = ddPct;
+  });
+
+  const neg = drawdowns.filter(d => d.dd < 0);
+  const avgDD = neg.length ? neg.reduce((s, d) => s + d.dd, 0) / neg.length : 0;
+  const avgDDPct = neg.length ? neg.reduce((s, d) => s + d.ddPct, 0) / neg.length : 0;
+  const currentDD = drawdowns.length ? drawdowns[drawdowns.length - 1].dd : 0;
+
+  return { maxDD, avgDD, currentDD, maxDDPct, avgDDPct };
+} 
+
 function renderDashboard(){
   const filtered = getFilteredTrades(dashboardFilters);
   updateDashboardFilterStatus(filtered);
