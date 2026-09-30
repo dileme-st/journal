@@ -855,7 +855,9 @@ async function loadFromSheet(silent){
     if(Array.isArray(data.reviews))   reviews   = data.reviews;
     if(data.system && Object.keys(data.system).length) systemData = data.system;
     if(data.settings) settings = Object.assign({}, settings, data.settings);
+    normalizeAllDates();
     save();
+    normalizeAllDates();
     const acc = document.getElementById('accountName');
     if(acc) acc.textContent = settings.accountName || 'Minha conta';
     renderDashboard();
@@ -871,6 +873,40 @@ async function loadFromSheet(silent){
 // ===========================
 function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Normaliza datas vindas do Sheets (2026-09-29T03:00:00.000Z → 2026-09-29)
+function normalizeDate(v){
+  if(!v) return '';
+  const s = String(v);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if(m) return m[1];
+  const d = new Date(s);
+  if(!isNaN(d.getTime())){
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth()+1).padStart(2,'0');
+    const da = String(d.getUTCDate()).padStart(2,'0');
+    return y+'-'+mo+'-'+da;
+  }
+  return s;
+}
+
+function normalizeAllDates(){
+  let changed = false;
+  [trades, watchlist, reviews].forEach(list => {
+    if(!Array.isArray(list)) return;
+    list.forEach(item => {
+      ['date','createdAt'].forEach(key => {
+        if(item[key]){
+          const n = normalizeDate(item[key]);
+          if(n !== item[key]){ item[key] = n; changed = true; }
+        }
+      });
+    });
+  });
+  if(changed) save();
+  return changed;
 }
 
 if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
@@ -1876,10 +1912,12 @@ function renderCalendar(tradeList){
 
   const map = {};
   tradeList.filter(t => t.result && t.date).forEach(t => {
-    if(!map[t.date]) map[t.date] = { trades: [], sumR: 0, sumPnl: 0 };
-    map[t.date].trades.push(t);
-    map[t.date].sumR += signedR(t);
-    map[t.date].sumPnl += parseFloat(t.pnl) || 0;
+    const dateKey = normalizeDate(t.date);
+    if(!dateKey) return;
+    if(!map[dateKey]) map[dateKey] = { trades: [], sumR: 0, sumPnl: 0 };
+    map[dateKey].trades.push(t);
+    map[dateKey].sumR += signedR(t);
+    map[dateKey].sumPnl += parseFloat(t.pnl) || 0;
   });
 
   const year = calendarDate.getFullYear();
