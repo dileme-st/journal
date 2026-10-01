@@ -1092,6 +1092,7 @@ let settings = DB.get('sj_settings', { accountName:'Minha conta', accountBalance
 let editingTrade = null;
 let editingWatch = null;
 let currentScreenshots = [];
+let lastFocusedSlot = null;
 let dashboardFilters = { month:'', from:'', to:'', asset:'', setup:'', result:'' };
 let journalSort = { column: 'date', direction: 'desc' };
 let calendarDate = new Date();
@@ -1400,7 +1401,10 @@ function setupImageUploads(){
     const input = document.getElementById('file-'+slot);
     const img = document.getElementById('prev-'+slot);
     if(!wrap || !input || !img) return;
+    wrap.addEventListener('mouseenter', () => { lastFocusedSlot = slot; });
+    wrap.addEventListener('touchstart', () => { lastFocusedSlot = slot; }, { passive:true });
     wrap.addEventListener('click', e => {
+      lastFocusedSlot = slot;
       if(e.target === img) return;
       if(e.target.closest('.remove-shot')) return;
       input.click();
@@ -2936,10 +2940,49 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDashboard();
   }
 
-  document.getElementById('lightbox').addEventListener('click', function(e){
-    if(e.target === this) closeLightbox();
-  });
+  // Colar imagem com Ctrl+V
+  document.addEventListener('paste', async e => {
+    const panel = document.getElementById('tradePanel');
+    if(!panel || !panel.classList.contains('open')) return;
 
+    const items = e.clipboardData && e.clipboardData.items;
+    if(!items) return;
+
+    // Se estiver em input/textarea e houver texto puro, deixa o paste acontecer
+    const target = e.target;
+    const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+    let imageFile = null;
+    let hasText = false;
+    for(const item of items){
+      if(item.type.startsWith('image/')) imageFile = item.getAsFile();
+      if(item.type === 'text/plain') hasText = true;
+    }
+    if(!imageFile) return;
+    if(isTextInput && hasText) return;
+
+    e.preventDefault();
+
+    // Escolhe slot: último focado, ou primeiro vazio
+    let targetSlot = lastFocusedSlot;
+    if(!targetSlot || currentScreenshots[SHOT_INDEX[targetSlot]]){
+      targetSlot = SHOT_SLOTS.find(s => !currentScreenshots[SHOT_INDEX[s]]);
+    }
+    if(!targetSlot){
+      showToast('Todos os slots estão preenchidos. Remova uma imagem primeiro.');
+      return;
+    }
+
+    try {
+      const dataUrl = await compressImage(imageFile);
+      currentScreenshots[SHOT_INDEX[targetSlot]] = dataUrl;
+      renderScreenshots();
+      const label = targetSlot === 'htf' ? 'HTF' : targetSlot === 'entry' ? 'Entry' : 'Exit';
+      showToast('Imagem colada em "' + label + '"');
+    } catch(err){
+      console.error(err);
+      showToast('Erro ao processar imagem colada');
+    }
+  });
 
   document.addEventListener('keydown', e => {
     if(e.key === 'Escape'){
