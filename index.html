@@ -614,8 +614,9 @@ textarea.form-control{resize:vertical;min-height:90px}
       <div>
         <div class="form-section">
           <div class="form-section-title">Geral</div>
-          <div class="form-grid mb-4">
-            <div class="form-group"><label for="t-date">Data</label><input type="date" id="t-date" class="form-control"></div>
+          <div class="form-grid cols2 mb-4">
+            <div class="form-group"><label for="t-date">Data de Entrada</label><input type="date" id="t-date" class="form-control"></div>
+            <div class="form-group"><label for="t-entrytime">Hora de Entrada</label><input type="time" id="t-entrytime" class="form-control"></div>
           </div>
           <div class="form-grid cols2">
             <div class="form-group"><label for="t-asset">Ativo</label><select id="t-asset" class="form-control" data-asset-select data-empty-label="Selecionar..."></select></div>
@@ -682,7 +683,6 @@ textarea.form-control{resize:vertical;min-height:90px}
             <div class="form-group"><label for="t-risk">Risco (%)</label><input type="number" id="t-risk" class="form-control" step="any" placeholder="0.5"></div>
             <div class="form-group"><label for="t-size">Tamanho (lotes)</label><input type="number" id="t-size" class="form-control" step="any" placeholder="Auto"></div>
             <div class="form-group"><label for="t-rr">R:R Planejado</label><input type="number" id="t-rr" class="form-control" step="any" placeholder="2.5"></div>
-            <div class="form-group"><label for="t-holding">Holding Period (horas)</label><input type="number" id="t-holding" class="form-control" step="any" placeholder="Ex: 48 = 2 dias"></div>
             <div class="form-group"><label for="t-multiplier">Valor $ / 1.0 de preço / lote</label><input type="number" id="t-multiplier" class="form-control" step="any" placeholder="100000"></div>
           </div>
           <p id="calc-hint" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5">R e P&L calculados automaticamente. Tamanho e Risco% também — preencha um dos dois e o outro é calculado.</p>
@@ -727,8 +727,18 @@ textarea.form-control{resize:vertical;min-height:90px}
               </select>
             </div>
             <div class="form-group">
-              <label for="t-entryhour">Hora da Entrada (0–23)</label>
-              <input type="number" id="t-entryhour" class="form-control" min="0" max="23" placeholder="Ex: 9">
+              <label for="t-exitdate">Data de Saída</label>
+              <input type="date" id="t-exitdate" class="form-control">
+            </div>
+          </div>
+          <div class="form-grid cols2 mt-2">
+            <div class="form-group">
+              <label for="t-exittime">Hora de Saída</label>
+              <input type="time" id="t-exittime" class="form-control">
+            </div>
+            <div class="form-group">
+              <label for="t-holding">Holding Period (auto)</label>
+              <input type="text" id="t-holding" class="form-control" readonly placeholder="—">
             </div>
           </div>
           <div class="form-group mt-2"><label for="t-mistakes">Erros cometidos</label><textarea id="t-mistakes" class="form-control" placeholder="Descreva erros ou desvios do plano..."></textarea></div>
@@ -1306,7 +1316,8 @@ function recalcRAndPnl(){
   }
 
   const rFinal = parseFloat(rField.value);
-  if(!isNaN(rFinal) && !isNaN(risk) && balance > 0){
+  // P&L só é calculado se o trade tem resultado (senão fica vazio)
+  if(!isNaN(rFinal) && !isNaN(risk) && balance > 0 && result){
     const riskAmount = balance * risk / 100;
     pnlField.value = (rFinal * riskAmount).toFixed(2);
   } else {
@@ -1346,6 +1357,30 @@ function recalcRiskFromSize(){
   if(risk >= 0 && isFinite(risk)) $('t-risk').value = risk.toFixed(2);
 }
 
+function recalcHolding(){
+  const el = document.getElementById('t-holding');
+  if(!el) return;
+  const entryDate = document.getElementById('t-date').value;
+  const entryTime = document.getElementById('t-entrytime').value;
+  const exitDate  = document.getElementById('t-exitdate').value;
+  const exitTime  = document.getElementById('t-exittime').value;
+
+  if(!entryDate || !entryTime || !exitDate || !exitTime){
+    el.value = '';
+    return;
+  }
+  const entry = new Date(entryDate + 'T' + entryTime);
+  const exit  = new Date(exitDate + 'T' + exitTime);
+  const hours = (exit - entry) / (1000 * 60 * 60);
+  if(isFinite(hours) && hours >= 0){
+    el.value = hours < 24
+      ? hours.toFixed(1) + 'h'
+      : (hours / 24).toFixed(2) + 'd (' + hours.toFixed(1) + 'h)';
+  } else {
+    el.value = '⚠ datas inconsistentes';
+  }
+}
+  
 function syncMultiplierToAsset(){
   const asset = document.getElementById('t-asset').value;
   const field = document.getElementById('t-multiplier');
@@ -1421,7 +1456,7 @@ function renderScreenshots(){
 // CLEAR / POPULATE FORMS
 // ===========================
 function clearTradeForm(){
-  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-holding','t-entryhour','t-mistakes','t-lessons','t-notes'].forEach(id => {
+  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-holding','t-entrytime','t-exitdate','t-exittime','t-mistakes','t-lessons','t-notes'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
@@ -1455,8 +1490,18 @@ function populateTradeForm(t){
   setVal('t-entry',t.entry); setVal('t-sl',t.sl); setVal('t-tp',t.tp);
   setVal('t-exit',t.exit);
   setVal('t-risk',t.risk); setVal('t-size',t.size); setVal('t-rr',t.rr);
-  setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl); setVal('t-holding',t.holding);
-  setVal('t-exitreason',t.exitReason); setVal('t-entryhour',t.entryHour);
+  setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl);
+  setVal('t-exitreason',t.exitReason);
+  setVal('t-exitdate',t.exitDate);
+  setVal('t-exittime',t.exitTime);
+  // Migração: se não tem entryTime salvo, mas tem entryHour antigo
+  if(t.entryTime){
+    setVal('t-entrytime',t.entryTime);
+  } else if(t.entryHour !== undefined && t.entryHour !== ''){
+    setVal('t-entrytime', String(t.entryHour).padStart(2,'0') + ':00');
+  }
+  // Recalcula holding a partir das datas preenchidas
+  recalcHolding();
   setVal('t-mistakes',t.mistakes); setVal('t-lessons',t.lessons); setVal('t-notes',t.notes);
   const multField = document.getElementById('t-multiplier');
   if(multField){
@@ -1555,16 +1600,28 @@ function saveTrade(){
       size: document.getElementById('t-size').value,
       multiplier: document.getElementById('t-multiplier').value,
       rr: document.getElementById('t-rr').value,
-      holding: document.getElementById('t-holding').value,
+      holding: (() => {
+        const v = document.getElementById('t-holding').value;
+        const m = v.match(/[\d.]+/);
+        return m ? parseFloat(m[0]) : '';
+      })(),
       exitReason: document.getElementById('t-exitreason').value,
-      entryHour: document.getElementById('t-entryhour').value,
+      exitDate: document.getElementById('t-exitdate').value,
+      exitTime: document.getElementById('t-exittime').value,
+      entryTime: document.getElementById('t-entrytime').value,
+      entryHour: (() => {
+        const t = document.getElementById('t-entrytime').value;
+        if(!t) return '';
+        const h = parseInt(t.split(':')[0]);
+        return isNaN(h) ? '' : h;
+      })(),
       partial: document.getElementById('tog-partial').classList.contains('on'),
       be: document.getElementById('tog-be').classList.contains('on'),
       trail: document.getElementById('tog-trail').classList.contains('on'),
       emo: document.getElementById('tog-emo').classList.contains('on'),
       result: result,
-      rmult: document.getElementById('t-rmult').value,
-      pnl: document.getElementById('t-pnl').value,
+      rmult: result ? document.getElementById('t-rmult').value : '',
+      pnl:   result ? document.getElementById('t-pnl').value   : '',
       mistakes: document.getElementById('t-mistakes').value,
       lessons: document.getElementById('t-lessons').value,
       notes: document.getElementById('t-notes').value,
@@ -1882,12 +1939,48 @@ function renderMonthlyChart(tradeList){
 
 function renderRecentTrades(tradeList){
   const tbody = document.getElementById('recentTradesBody');
-  const recent = tradeList.slice(0,5);
+  const recent = [...tradeList]
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .slice(0, 5);
   if(!recent.length){
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted)">Nenhuma operação registrada</td></tr>';
     return;
   }
-  tbody.innerHTML = recent.map(t => tradeRow(t,false)).join('');
+  tbody.innerHTML = recent.map(t => recentTradeRow(t)).join('');
+}
+
+function recentTradeRow(t){
+  const resultBadge = t.result === 'Win' ? '<span class="badge badge-win">Win</span>' :
+    t.result === 'Loss' ? '<span class="badge badge-loss">Loss</span>' :
+    t.result === 'BE' ? '<span class="badge badge-be">BE</span>' : '—';
+  const dirBadge = t.dir === 'Long' ? '<span class="badge badge-long">Long</span>' :
+    t.dir === 'Short' ? '<span class="badge badge-short">Short</span>' : '—';
+  const setupBadge = t.setup === 'A+' ? '<span class="badge badge-aplus">A+</span>' :
+    t.setup === 'Valid' ? '<span class="badge badge-valid">Válido</span>' : '—';
+  const hasResult = !!t.result;
+  const pnlVal = hasResult ? (parseFloat(t.pnl) || 0) : 0;
+  const pnlStr = hasResult
+    ? '<span style="color:'+(pnlVal>=0?'var(--green)':'var(--red)')+';font-family:\'DM Mono\',monospace">'+(pnlVal>=0?'+':'')+'$'+pnlVal.toFixed(2)+'</span>'
+    : '—';
+  const rVal = hasResult ? signedR(t) : 0;
+  const rStr = (hasResult && t.rmult) ? '<span style="font-family:\'DM Mono\',monospace">'+(rVal>0?'+':'')+rVal+'R</span>' : '—';
+  return '<tr onclick="goToTrade(\''+esc(t.id)+'\')" style="cursor:pointer" title="Abrir no Journal">'+
+    '<td>'+(esc(t.date)||'—')+'</td>'+
+    '<td style="font-weight:600;font-family:\'DM Mono\'">'+(esc(t.asset)||'—')+'</td>'+
+    '<td>'+dirBadge+'</td><td>'+setupBadge+'</td><td>'+resultBadge+'</td>'+
+    '<td>'+rStr+'</td><td>'+pnlStr+'</td>'+
+  '</tr>';
+}
+
+function goToTrade(id){
+  const navBtn = document.querySelector('.nav-item[data-page="journal"]');
+  navigate('journal', navBtn);
+  expandedTrades.add(String(id));
+  renderJournal();
+  setTimeout(() => {
+    const row = document.getElementById('expand-'+String(id));
+    if(row) row.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 200);
 }
 
 function renderSetupPerf(tradeList){
@@ -2353,8 +2446,9 @@ function renderJournal(){
               '<div class="expand-row"><span class="k">Exit</span><span class="v">'+(esc(t.exit)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">Risco</span><span class="v">'+(esc(t.risk)||'—')+'%</span></div>'+
               '<div class="expand-row"><span class="k">Tamanho</span><span class="v">'+(esc(t.size)||'—')+'</span></div>'+
-              '<div class="expand-row"><span class="k">Holding</span><span class="v">'+(esc(t.holding)||'—')+'h</span></div>'+
-              '<div class="expand-row"><span class="k">Hora</span><span class="v">'+(esc(t.entryHour)||'—')+':00</span></div>'+
+              '<div class="expand-row"><span class="k">Holding</span><span class="v">'+(t.holding ? (t.holding < 24 ? t.holding.toFixed(1)+'h' : (t.holding/24).toFixed(1)+'d') : '—')+'</span></div>'+
+              '<div class="expand-row"><span class="k">Entrada</span><span class="v">'+(esc(t.date)||'—')+' '+(esc(t.entryTime)||'')+'</span></div>'+
+              '<div class="expand-row"><span class="k">Saída</span><span class="v">'+(t.exitDate ? esc(t.exitDate)+' '+esc(t.exitTime||'') : '—')+'</span></div>'+
               '<div class="expand-row"><span class="k">Motivo Saída</span><span class="v">'+(esc(t.exitReason)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">R:R</span><span class="v">'+(esc(t.rr)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">R:R</span><span class="v">'+(esc(t.rr)||'—')+'</span></div>'+
@@ -2392,10 +2486,13 @@ function tradeRow(t, expandable){
     t.dir === 'Short' ? '<span class="badge badge-short">Short</span>' : '—';
   const setupBadge = t.setup === 'A+' ? '<span class="badge badge-aplus">A+</span>' :
     t.setup === 'Valid' ? '<span class="badge badge-valid">Válido</span>' : '—';
-  const pnlVal = parseFloat(t.pnl) || 0;
-  const pnlStr = '<span style="color:'+(pnlVal>=0?'var(--green)':'var(--red)')+';font-family:\'DM Mono\',monospace">'+(pnlVal>=0?'+':'')+'$'+pnlVal.toFixed(2)+'</span>';
-  const rVal = signedR(t);
-  const rStr = t.rmult ? '<span style="font-family:\'DM Mono\',monospace">'+(rVal>0?'+':'')+rVal+'R</span>' : '—';
+   const hasResult = !!t.result;
+  const pnlVal = hasResult ? (parseFloat(t.pnl) || 0) : 0;
+  const pnlStr = hasResult
+    ? '<span style="color:'+(pnlVal>=0?'var(--green)':'var(--red)')+';font-family:\'DM Mono\',monospace">'+(pnlVal>=0?'+':'')+'$'+pnlVal.toFixed(2)+'</span>'
+    : '—';
+  const rVal = hasResult ? signedR(t) : 0;
+  const rStr = (hasResult && t.rmult) ? '<span style="font-family:\'DM Mono\',monospace">'+(rVal>0?'+':'')+rVal+'R</span>' : '—';
   const status = t.result ? 'Encerrado' : 'Aberto';
   const statusColor = t.result ? 'var(--muted)' : 'var(--accent)';
   if(expandable){
@@ -2653,11 +2750,11 @@ function resetMultipliers(){
 // EXPORT / IMPORT
 // ===========================
 function exportCSV(){
-  const headers = ['Date','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Exit','Risk %','Size','RR Planned','RR Final','Holding (h)','Entry Hour','Exit Reason','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
+  const headers = ['Entry Date','Entry Time','Exit Date','Exit Time','Holding (h)','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Exit','Risk %','Size','RR Planned','RR Final','Exit Reason','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
   const escapeCSV = v => '"'+String(v ?? '').replace(/"/g,'""')+'"';
   const rows = trades.map(t => {
     const confluences = Object.entries(t.checks||{}).filter(([k,v]) => v && CHECK_LABELS_CSV[k]).map(([k]) => CHECK_LABELS_CSV[k]).join('; ');
-    return [t.date||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.exit||'',t.risk||'',t.size||'',t.rr||'',t.rmult||'',t.holding||'',t.entryHour||'',t.exitReason||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
+    return [t.date||'',t.entryTime||'',t.exitDate||'',t.exitTime||'',t.holding||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.exit||'',t.risk||'',t.size||'',t.rr||'',t.rmult||'',t.exitReason||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
   });
   const csv = [headers.map(escapeCSV).join(','), ...rows].join('\n');
   const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
@@ -2790,7 +2887,15 @@ document.addEventListener('DOMContentLoaded', () => {
       syncMultiplierToAsset();
     });
   }
-
+  // Auto-cálculo do Holding Period
+  ['t-date','t-entrytime','t-exitdate','t-exittime'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el){
+      el.addEventListener('change', recalcHolding);
+      el.addEventListener('input', recalcHolding);
+    }
+  });
+  
   const acc = document.getElementById('accountName');
   if(acc) acc.textContent = settings.accountName || 'Minha conta';
 
