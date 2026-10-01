@@ -196,6 +196,55 @@ textarea.form-control{resize:vertical;min-height:90px}
 /* PERF CARDS */
 .setup-perf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 @media(max-width:1100px){.setup-perf-grid{grid-template-columns:1fr}}
+
+/* LOSS STREAK ALERT */
+.streak-alert{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--red)}
+.streak-alert.hidden{display:none}
+.streak-alert .icon{font-size:20px;flex-shrink:0}
+
+/* SECTION TOGGLE */
+.section-toggle{background:none;border:1px solid var(--border2);color:var(--muted);padding:5px 12px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
+.section-toggle:hover{border-color:var(--accent2);color:var(--accent)}
+.section-toggle.active{background:rgba(96,165,250,.1);border-color:var(--accent2);color:var(--accent)}
+.hidden-block{display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
+.hidden-block.show{display:block}
+
+/* MOM COMPARISON */
+.mom-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.mom-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.mom-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px}
+.mom-values{display:flex;align-items:baseline;gap:8px;font-family:'DM Mono',monospace;flex-wrap:wrap}
+.mom-current{font-size:18px;font-weight:600}
+.mom-prev{font-size:11px;color:var(--muted)}
+.mom-delta{font-size:11px;font-weight:500}
+.mom-delta.up{color:var(--green)}
+.mom-delta.down{color:var(--red)}
+.mom-delta.neutral{color:var(--muted)}
+
+/* HEATMAP */
+.heatmap-wrap{overflow-x:auto}
+.heatmap-grid{display:grid;grid-template-columns:50px repeat(8,1fr);gap:4px;min-width:520px}
+.heatmap-header{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:4px 2px;text-align:center;font-weight:500}
+.heatmap-row-label{font-size:11px;color:var(--muted);padding:10px 6px;text-align:right;font-family:'DM Mono',monospace}
+.heatmap-cell{padding:10px 4px;border-radius:5px;text-align:center;font-size:10px;font-family:'DM Mono',monospace;background:var(--bg);border:1px solid var(--border);color:var(--muted);min-height:38px;display:flex;align-items:center;justify-content:center}
+.heatmap-cell.has-data{cursor:default}
+.heatmap-cell.positive-1{background:rgba(34,197,94,.15);border-color:rgba(34,197,94,.3);color:var(--green)}
+.heatmap-cell.positive-2{background:rgba(34,197,94,.3);border-color:rgba(34,197,94,.5);color:var(--green);font-weight:600}
+.heatmap-cell.negative-1{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.3);color:var(--red)}
+.heatmap-cell.negative-2{background:rgba(239,68,68,.3);border-color:rgba(239,68,68,.5);color:var(--red);font-weight:600}
+
+/* CONFLUENCE TABLE */
+.conf-table{font-size:12px}
+.conf-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);align-items:center}
+.conf-row:last-child{border-bottom:none}
+.conf-header{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding-bottom:6px;border-bottom:1px solid var(--border);font-weight:500}
+.conf-name{font-weight:500}
+.conf-stats{font-family:'DM Mono',monospace;font-size:11px;text-align:right;white-space:nowrap}
+.conf-stats .pos{color:var(--green)}
+.conf-stats .neg{color:var(--red)}
+.conf-stats .muted{color:var(--muted)}
+
+@media(max-width:1100px){.mom-grid{grid-template-columns:repeat(2,1fr)}}
 .setup-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:16px}
 .setup-card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px}
 .perf-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
@@ -382,14 +431,24 @@ textarea.form-control{resize:vertical;min-height:90px}
         <button class="btn btn-ghost btn-sm" onclick="resetDashboardFilters()">Limpar filtros</button>
       </div>
     </div>
+    <div class="streak-alert hidden" id="streakAlert">
+      <div class="icon">⚠️</div>
+      <div id="streakAlertText"></div>
+    </div>
     <div class="stats-grid" id="statsGrid"></div>
     <div class="chart-area mb-4">
       <div class="chart-title">Curva de Equity</div>
       <div class="chart-canvas-wrap"><canvas id="equityChart"></canvas></div>
     </div>
     <div class="chart-area mb-4">
-      <div class="chart-title">Performance Mensal (R)</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap">
+        <div class="chart-title" style="margin-bottom:0">Performance Mensal (R)</div>
+        <button class="section-toggle" id="momToggle" onclick="toggleMoM()">▸ Comparação Mês</button>
+      </div>
       <div class="chart-canvas-wrap"><canvas id="monthlyChart"></canvas></div>
+      <div class="hidden-block" id="momBlock">
+        <div class="mom-grid" id="momGrid"></div>
+      </div>
     </div>
     <div class="calendar-wrap">
       <div class="calendar-header">
