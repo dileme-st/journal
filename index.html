@@ -1721,13 +1721,33 @@ function getFilteredTrades(filters = {}, source = trades){
   });
 }
 
-function applyDashboardFilters(){ collectDashboardFilters(); renderDashboard(); }
+function applyDashboardFilters(){
+  collectDashboardFilters();
+  syncCalendarToFilters();
+  renderDashboard();
+}
+
+function syncCalendarToFilters(){
+  if(dashboardFilters.month){
+    const [y, m] = dashboardFilters.month.split('-');
+    calendarDate = new Date(parseInt(y), parseInt(m) - 1, 1);
+    return;
+  }
+  if(dashboardFilters.from){
+    const d = new Date(dashboardFilters.from + 'T12:00:00');
+    if(!isNaN(d.getTime())){
+      calendarDate = new Date(d.getFullYear(), d.getMonth(), 1);
+      return;
+    }
+  }
+}
 
 function resetDashboardFilters(){
   ['dash-month','dash-from','dash-to','dash-asset','dash-setup','dash-result'].forEach(id => {
     const el = document.getElementById(id); if(el) el.value = '';
   });
   collectDashboardFilters();
+  calendarDate = new Date();
   renderDashboard();
 }
 
@@ -2125,7 +2145,8 @@ function renderCalendar(tradeList){
   const year = calendarDate.getFullYear();
   const month = calendarDate.getMonth();
   const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  if(label) label.textContent = monthNames[month] + ' ' + year;
+  const filterActive = dashboardFilters.month || dashboardFilters.from || dashboardFilters.to || dashboardFilters.asset || dashboardFilters.setup || dashboardFilters.result;
+  if(label) label.innerHTML = monthNames[month] + ' ' + year + (filterActive ? ' <span style="font-size:10px;color:var(--accent);margin-left:6px">● filtros ativos</span>' : '');
 
   const first = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
