@@ -950,6 +950,22 @@ async function syncToSheet(action, data){
   }
 }
 
+async function uploadScreenshotToSheet(tradeId, slot, dataUrl){
+  if(!SHEET_WEBHOOK_URL) return null;
+  try {
+    const res = await fetch(SHEET_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'uploadScreenshot', data: { tradeId, slot, dataUrl } })
+    });
+    const json = await res.json();
+    return (json.status === 'success') ? json.url : null;
+  } catch(e){
+    console.warn('Upload pra Drive falhou:', e);
+    return null;
+  }
+}
+  
 async function syncAllToSheet(){
   if(!SHEET_WEBHOOK_URL){ showToast('Configure a URL do Apps Script primeiro.'); return; }
   showToast('Enviando para a planilha...');
@@ -1581,6 +1597,20 @@ function recalcHolding(){
     el.value = '⚠ datas inconsistentes';
   }
 }
+
+function recalcRR(){
+  const rrEl = document.getElementById('t-rr');
+  if(!rrEl) return;
+  if(rrEl.dataset.userEdited === 'true') return;
+  const entry = parseFloat(document.getElementById('t-entry').value);
+  const sl = parseFloat(document.getElementById('t-sl').value);
+  const tp = parseFloat(document.getElementById('t-tp').value);
+  if(isNaN(entry) || isNaN(sl) || isNaN(tp) || entry === sl) return;
+  const riskPrice = Math.abs(entry - sl);
+  const rewardPrice = Math.abs(tp - entry);
+  const rr = rewardPrice / riskPrice;
+  if(isFinite(rr) && rr > 0) rrEl.value = rr.toFixed(2);
+}
   
 function syncMultiplierToAsset(){
   const asset = document.getElementById('t-asset').value;
@@ -1712,6 +1742,8 @@ function clearTradeForm(){
   if(pr) pr.textContent = '';
   const mult = document.getElementById('t-multiplier');
   if(mult){ mult.value = ''; mult.dataset.userEdited = 'false'; }
+  const rrF = document.getElementById('t-rr');
+  if(rrF) rrF.dataset.userEdited = 'false';
   const hint = document.getElementById('calc-hint');
   if(hint) hint.textContent = 'R e P&L calculados automaticamente. Tamanho e Risco% também — preencha um dos dois e o outro é calculado.';
   currentScreenshots = [];
@@ -1724,6 +1756,8 @@ async function populateTradeForm(t){
   setVal('t-entry',t.entry); setVal('t-sl',t.sl); setVal('t-tp',t.tp);
   setVal('t-exit',t.exit);
   setVal('t-risk',t.risk); setVal('t-size',t.size); setVal('t-rr',t.rr);
+  const rrField = document.getElementById('t-rr');
+  if(rrField) rrField.dataset.userEdited = t.rr ? 'true' : 'false';
   setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl);
   setVal('t-exitreason',t.exitReason);
   setVal('t-exitdate',t.exitDate);
@@ -1778,6 +1812,7 @@ async function populateTradeForm(t){
     const shots = await ScreenshotDB.listForTrade(String(t.id));
     SHOT_SLOTS.forEach(slot => {
       if(shots[slot]) currentScreenshots[SHOT_INDEX[slot]] = shots[slot];
+      else if(t.screenshotUrls && t.screenshotUrls[slot]) currentScreenshots[SHOT_INDEX[slot]] = t.screenshotUrls[slot];
     });
   }
   renderScreenshots();
@@ -1908,6 +1943,33 @@ async function saveTrade(){
     }
     save();
     syncToSheet('saveTrade', trade);
+
+    // Upload das screenshots para o Drive (assíncrono, não bloqueia)
+    if(SHEET_WEBHOOK_URL && currentScreenshots.some(Boolean)){
+      (async () => {
+        try {
+          const urls = Object.assign({}, trade.screenshotUrls || {});
+          for(const slot of SHOT_SLOTS){
+            const data = currentScreenshots[SHOT_INDEX[slot]];
+            if(data){
+              const url = await uploadScreenshotToSheet(tradeId, slot, data);
+              if(url) urls[slot] = url;
+            } else {
+              delete urls[slot];
+            }
+          }
+          if(Object.keys(urls).length){
+            const idx = trades.findIndex(x => String(x.id) === String(tradeId));
+            if(idx > -1){
+              trades[idx].screenshotUrls = urls;
+              save();
+              syncToSheet('saveTrade', trades[idx]);
+            }
+          }
+        } catch(e){ console.warn(e); }
+      })();
+    }
+
     closePanel('tradePanel');
     renderJournal();
     renderDashboard();
@@ -2791,12 +2853,17 @@ async function loadScreenshotsInto(el){
   if(!el || el.dataset.loaded === '1') return;
   const tradeId = el.dataset.tradeId;
   if(!tradeId) return;
+  const trade = trades.find(t => String(t.id) === String(tradeId));
   el.dataset.loaded = 'loading';
   try {
     const shots = await ScreenshotDB.listForTrade(tradeId);
-    const srcs = SHOT_SLOTS.map(s => shots[s]).filter(Boolean);
+    const srcs = [];
+    SHOT_SLOTS.forEach(slot => {
+      if(shots[slot]) srcs.push(shots[slot]);
+      else if(trade && trade.screenshotUrls && trade.screenshotUrls[slot]) srcs.push(trade.screenshotUrls[slot]);
+    });
     if(srcs.length){
-      el.innerHTML = srcs.map((src,i) => '<img src="'+src+'" alt="Screenshot '+(i+1)+'" onclick="openLightbox(this.src)">').join('');
+      el.innerHTML = srcs.map((src,i) => '<img src="'+src+'" alt="Screenshot '+(i+1)+'" onclick="openLightbox(this.src)" onerror="this.style.display=\'none\'">').join('');
     } else {
       el.innerHTML = '';
     }
@@ -3231,13 +3298,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   setupImageUploads();
 
-  ['t-entry','t-sl','t-tp','t-exit','t-rr'].forEach(id => {
+  ['t-entry','t-sl','t-tp','t-exit'].forEach(id => {
     const el = document.getElementById(id);
     if(el){
-      el.addEventListener('change', recalcRAndPnl);
-      el.addEventListener('input', recalcRAndPnl);
+      el.addEventListener('change', () => { recalcRAndPnl(); recalcRR(); });
+      el.addEventListener('input',  () => { recalcRAndPnl(); recalcRR(); });
     }
   });
+
+  const rrEl = document.getElementById('t-rr');
+  if(rrEl){
+    rrEl.addEventListener('input', () => {
+      if(rrEl.value === '') rrEl.dataset.userEdited = 'false';
+      else rrEl.dataset.userEdited = 'true';
+      recalcRAndPnl();
+    });
+  }
 
   const riskEl = document.getElementById('t-risk');
   if(riskEl){
