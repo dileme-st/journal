@@ -707,6 +707,31 @@ textarea.form-control{resize:vertical;min-height:90px}
             </div>
             <input type="hidden" id="t-result">
           </div>
+          <div class="toggle-wrap" style="border-top:1px solid var(--border);margin-top:4px;padding-top:8px">
+            <span class="toggle-label">Usar realizações parciais?</span>
+            <div class="toggle" role="switch" aria-checked="false" tabindex="0" id="tog-partials" onclick="toggleEl(this); togglePartialsBlock();"></div>
+          </div>
+          <div id="partialsBlock" style="display:none;margin-bottom:12px">
+            <div style="display:grid;grid-template-columns:1fr 70px 70px;gap:8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:8px">
+              <div>Preço / Nível</div><div style="text-align:right">% Fechada</div><div style="text-align:right">R</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 70px 70px;gap:8px;margin-bottom:6px;align-items:center">
+              <input type="number" step="any" id="t-p1-price" class="form-control" placeholder="TP1 preço">
+              <input type="number" step="any" id="t-p1-pct" class="form-control" placeholder="50" style="text-align:right">
+              <input type="text" id="t-p1-r" class="form-control" placeholder="—" readonly style="text-align:right">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 70px 70px;gap:8px;margin-bottom:6px;align-items:center">
+              <input type="number" step="any" id="t-p2-price" class="form-control" placeholder="TP2 preço">
+              <input type="number" step="any" id="t-p2-pct" class="form-control" placeholder="30" style="text-align:right">
+              <input type="text" id="t-p2-r" class="form-control" placeholder="—" readonly style="text-align:right">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 70px 70px;gap:8px;margin-bottom:6px;align-items:center">
+              <input type="number" step="any" id="t-p3-price" class="form-control" placeholder="TP3 preço">
+              <input type="number" step="any" id="t-p3-pct" class="form-control" placeholder="20" style="text-align:right">
+              <input type="text" id="t-p3-r" class="form-control" placeholder="—" readonly style="text-align:right">
+            </div>
+            <div id="t-partials-rest" style="font-size:11px;color:var(--muted);text-align:right;margin-top:6px"></div>
+          </div>
           <div class="form-grid cols2">
             <div class="form-group"><label for="t-rmult">R Multiple Final</label><input type="number" id="t-rmult" class="form-control" step="any" placeholder="Auto" readonly></div>
             <div class="form-group"><label for="t-pnl">P&L Líquido ($)</label><input type="number" id="t-pnl" class="form-control" step="any" placeholder="Auto" readonly></div>
@@ -1274,10 +1299,92 @@ function recalcRAndPnl(){
   const hint     = $('calc-hint');
   if(!rField) return;
 
-  let rValue = null;
-  let mode = '';
   const hasPrices = !isNaN(entry) && !isNaN(sl) && entry !== sl && !!dir;
   const riskPrice = hasPrices ? Math.abs(entry - sl) : 0;
+
+  // === MODO PARCIAIS ===
+  if(usePartials()){
+    let totalR = 0;
+    let totalPct = 0;
+    const partials = [
+      { priceId:'t-p1-price', pctId:'t-p1-pct', rId:'t-p1-r' },
+      { priceId:'t-p2-price', pctId:'t-p2-pct', rId:'t-p2-r' },
+      { priceId:'t-p3-price', pctId:'t-p3-pct', rId:'t-p3-r' }
+    ];
+    partials.forEach(p => {
+      const price = parseFloat($(p.priceId).value);
+      const pct   = parseFloat($(p.pctId).value);
+      const rFieldEl = $(p.rId);
+      if(!isNaN(price) && !isNaN(pct) && hasPrices){
+        const r = calcPartialR(price);
+        if(r !== null){
+          rFieldEl.value = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
+          totalR   += r * pct / 100;
+          totalPct += pct;
+        } else {
+          rFieldEl.value = '—';
+        }
+      } else {
+        rFieldEl.value = '—';
+      }
+    });
+
+    // R do restante (100% - totalPct)
+    const restPct = Math.max(0, 100 - totalPct);
+    let restR = null;
+    if(!isNaN(exit) && hasPrices){
+      restR = (dir === 'Long' ? (exit - entry) : (entry - exit)) / riskPrice;
+    } else if(result === 'Loss'){
+      restR = -1;
+    } else if(result === 'BE'){
+      restR = 0;
+    } else if(result === 'Win'){
+      if(!isNaN(tp) && hasPrices){
+        restR = (dir === 'Long' ? (tp - entry) : (entry - tp)) / riskPrice;
+      } else if(!isNaN(rr)){
+        restR = Math.abs(rr);
+      }
+    } else if(!isNaN(tp) && hasPrices){
+      restR = (dir === 'Long' ? (tp - entry) : (entry - tp)) / riskPrice;
+    }
+
+    const restInfo = document.getElementById('t-partials-rest');
+    if(restPct > 0 && restR !== null){
+      totalR += restR * restPct / 100;
+      if(restInfo) restInfo.textContent = 'Restante: ' + restPct.toFixed(0) + '% · ' + (restR >= 0 ? '+' : '') + restR.toFixed(2) + 'R';
+    } else if(restPct > 0){
+      if(restInfo) restInfo.textContent = 'Restante: ' + restPct.toFixed(0) + '% · defina Exit ou Resultado';
+    } else {
+      if(restInfo) restInfo.textContent = '';
+    }
+
+    if(totalPct > 100){
+      if(hint) hint.textContent = '⚠ Soma das parciais excede 100%';
+      rField.value = '';
+      pnlField.value = '';
+      return;
+    }
+
+    if(totalPct > 0 || restR !== null){
+      rField.value = totalR.toFixed(2);
+      if(hint) hint.textContent = 'R = ' + totalR.toFixed(2) + 'R (soma ponderada de parciais)';
+    } else {
+      rField.value = '';
+      if(hint) hint.textContent = 'Preencha as parciais para calcular o R.';
+    }
+
+    const rFinal = parseFloat(rField.value);
+    if(!isNaN(rFinal) && !isNaN(risk) && balance > 0 && result){
+      pnlField.value = (rFinal * (balance * risk / 100)).toFixed(2);
+    } else {
+      pnlField.value = '';
+    }
+    return;
+  }
+
+  // === MODO SIMPLES (sem parciais) ===
+  let rValue = null;
+  let mode = '';
 
   if(!isNaN(exit) && hasPrices){
     const move = dir === 'Long' ? (exit - entry) : (entry - exit);
@@ -1317,15 +1424,12 @@ function recalcRAndPnl(){
   }
 
   const rFinal = parseFloat(rField.value);
-  // P&L só é calculado se o trade tem resultado (senão fica vazio)
   if(!isNaN(rFinal) && !isNaN(risk) && balance > 0 && result){
-    const riskAmount = balance * risk / 100;
-    pnlField.value = (rFinal * riskAmount).toFixed(2);
+    pnlField.value = (rFinal * (balance * risk / 100)).toFixed(2);
   } else {
     pnlField.value = '';
   }
 }
-
 function recalcSizeFromRisk(){
   const $ = id => document.getElementById(id);
   const entry      = parseFloat($('t-entry').value);
@@ -1392,6 +1496,29 @@ function syncMultiplierToAsset(){
   }
 }
 
+function togglePartialsBlock(){
+  const on = document.getElementById('tog-partials').classList.contains('on');
+  const block = document.getElementById('partialsBlock');
+  if(block) block.style.display = on ? 'block' : 'none';
+  recalcRAndPnl();
+}
+
+function usePartials(){
+  const el = document.getElementById('tog-partials');
+  return el && el.classList.contains('on');
+}
+
+function calcPartialR(price){
+  const $ = id => document.getElementById(id);
+  const entry = parseFloat($('t-entry').value);
+  const sl = parseFloat($('t-sl').value);
+  const dir = $('t-dir').value;
+  if(isNaN(entry) || isNaN(sl) || !dir || entry === sl || isNaN(price)) return null;
+  const riskPrice = Math.abs(entry - sl);
+  const move = dir === 'Long' ? (price - entry) : (entry - price);
+  return move / riskPrice;
+}
+  
 // ===========================
 // SCREENSHOTS
 // ===========================
@@ -1460,7 +1587,7 @@ function renderScreenshots(){
 // CLEAR / POPULATE FORMS
 // ===========================
 function clearTradeForm(){
-  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-holding','t-entrytime','t-exitdate','t-exittime','t-mistakes','t-lessons','t-notes'].forEach(id => {
+  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-holding','t-entrytime','t-exitdate','t-exittime','t-p1-price','t-p1-pct','t-p2-price','t-p2-pct','t-p3-price','t-p3-pct','t-mistakes','t-lessons','t-notes'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
@@ -1476,10 +1603,17 @@ function clearTradeForm(){
     const el = document.getElementById(id);
     if(el) el.checked = false;
   });
-  ['tog-partial','tog-be','tog-trail','tog-emo'].forEach(id => {
+  ['tog-partial','tog-be','tog-trail','tog-emo','tog-partials'].forEach(id => {
     const el = document.getElementById(id);
     if(el){ el.classList.remove('on'); el.setAttribute('aria-checked','false'); }
   });
+  ['t-p1-r','t-p2-r','t-p3-r'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  const pb = document.getElementById('partialsBlock');
+  if(pb) pb.style.display = 'none';
+  const pr = document.getElementById('t-partials-rest');
+  if(pr) pr.textContent = '';
   const mult = document.getElementById('t-multiplier');
   if(mult){ mult.value = ''; mult.dataset.userEdited = 'false'; }
   const hint = document.getElementById('calc-hint');
@@ -1530,6 +1664,21 @@ function populateTradeForm(t){
   setToggle('tog-be',t.be);
   setToggle('tog-trail',t.trail);
   setToggle('tog-emo',t.emo);
+    const setToggleB = (id,on) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.classList.toggle('on', !!on);
+    el.setAttribute('aria-checked', on ? 'true' : 'false');
+  };
+  setToggleB('tog-partials', t.usePartials);
+  const pb = document.getElementById('partialsBlock');
+  if(pb) pb.style.display = t.usePartials ? 'block' : 'none';
+  const partials = t.partials || [];
+  ['1','2','3'].forEach((n, i) => {
+    const p = partials[i];
+    setVal('t-p'+n+'-price', p ? p.price : '');
+    setVal('t-p'+n+'-pct', p ? p.pct : '');
+  });
   currentScreenshots = Array.isArray(t.screenshots) ? t.screenshots.slice() : [];
   if(!currentScreenshots.some(Boolean)){
     currentScreenshots = [t.img_htf, t.img_entry, t.img_exit].filter(Boolean);
@@ -1619,6 +1768,12 @@ function saveTrade(){
         const h = parseInt(t.split(':')[0]);
         return isNaN(h) ? '' : h;
       })(),
+          partials: usePartials() ? [
+        { price: document.getElementById('t-p1-price').value, pct: document.getElementById('t-p1-pct').value },
+        { price: document.getElementById('t-p2-price').value, pct: document.getElementById('t-p2-pct').value },
+        { price: document.getElementById('t-p3-price').value, pct: document.getElementById('t-p3-pct').value }
+      ].filter(p => p.price !== '' || p.pct !== '') : [],
+      usePartials: usePartials(),
       partial: document.getElementById('tog-partial').classList.contains('on'),
       be: document.getElementById('tog-be').classList.contains('on'),
       trail: document.getElementById('tog-trail').classList.contains('on'),
@@ -2476,7 +2631,13 @@ function renderJournal(){
               '<div class="expand-row"><span class="k">Saída</span><span class="v">'+(t.exitDate ? esc(t.exitDate)+' '+esc(t.exitTime||'') : '—')+'</span></div>'+
               '<div class="expand-row"><span class="k">Motivo Saída</span><span class="v">'+(esc(t.exitReason)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">R:R</span><span class="v">'+(esc(t.rr)||'—')+'</span></div>'+
-              '<div class="expand-row"><span class="k">R:R</span><span class="v">'+(esc(t.rr)||'—')+'</span></div>'+
+              (t.usePartials && t.partials && t.partials.length ? t.partials.map((p,i) => {
+                const price = parseFloat(p.price);
+                const pct = parseFloat(p.pct);
+                if(isNaN(price) && isNaN(pct)) return '';
+                const r = calcPartialRFromTrade(t, price);
+                return '<div class="expand-row"><span class="k">TP'+(i+1)+'</span><span class="v">'+(!isNaN(price)?esc(price):'—')+' @ '+(!isNaN(pct)?pct+'%':'—')+' · '+(r!==null?(r>=0?'+':'')+r.toFixed(2)+'R':'—')+'</span></div>';
+              }).join('') : '')+
             '</div></div>'+
             '<div><div class="expand-section"><h4>Contexto</h4>'+
               '<div class="expand-row"><span class="k">Viés W1</span><span class="v">'+(esc(t.bias)||'—')+'</span></div>'+
@@ -2543,6 +2704,15 @@ function getChecksHtml(checks){
   return Object.entries(checks).filter(([k,v]) => v && CHECK_LABELS_HTML[k]).map(([k]) => '<span class="expand-check">'+CHECK_LABELS_HTML[k]+'</span>').join('');
 }
 
+function calcPartialRFromTrade(t, price){
+  const entry = parseFloat(t.entry);
+  const sl = parseFloat(t.sl);
+  if(isNaN(entry) || isNaN(sl) || !t.dir || entry === sl || isNaN(price)) return null;
+  const riskPrice = Math.abs(entry - sl);
+  const move = t.dir === 'Long' ? (price - entry) : (entry - price);
+  return move / riskPrice;
+}
+  
 function toggleExpand(id){
   const row = document.getElementById('expand-'+id);
   if(!row) return;
@@ -2912,6 +3082,14 @@ document.addEventListener('DOMContentLoaded', () => {
       syncMultiplierToAsset();
     });
   }
+
+    ['t-p1-price','t-p1-pct','t-p2-price','t-p2-pct','t-p3-price','t-p3-pct'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el){
+      el.addEventListener('change', recalcRAndPnl);
+      el.addEventListener('input', recalcRAndPnl);
+    }
+  });
   // Auto-cálculo do Holding Period
   ['t-date','t-entrytime','t-exitdate','t-exittime'].forEach(id => {
     const el = document.getElementById(id);
