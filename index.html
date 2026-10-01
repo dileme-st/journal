@@ -1812,7 +1812,7 @@ async function populateTradeForm(t){
     const shots = await ScreenshotDB.listForTrade(String(t.id));
     SHOT_SLOTS.forEach(slot => {
       if(shots[slot]) currentScreenshots[SHOT_INDEX[slot]] = shots[slot];
-      else if(t.screenshotUrls && t.screenshotUrls[slot]) currentScreenshots[SHOT_INDEX[slot]] = t.screenshotUrls[slot];
+      else if(t.screenshotUrls && t.screenshotUrls[slot]) currentScreenshots[SHOT_INDEX[slot]] = fixDriveUrl(t.screenshotUrls[slot]);
     });
   }
   renderScreenshots();
@@ -2849,6 +2849,16 @@ function loadMoreJournal(){
   renderJournal();
 }
 
+function fixDriveUrl(url){
+  if(!url || typeof url !== 'string') return url;
+  // Extrai o FILE_ID de qualquer formato antigo do Drive
+  const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if(m && m[1] && url.indexOf('lh3.googleusercontent.com') === -1){
+    return 'https://lh3.googleusercontent.com/d/' + m[1];
+  }
+  return url;
+}
+
 async function loadScreenshotsInto(el){
   if(!el || el.dataset.loaded === '1') return;
   const tradeId = el.dataset.tradeId;
@@ -2860,7 +2870,7 @@ async function loadScreenshotsInto(el){
     const srcs = [];
     SHOT_SLOTS.forEach(slot => {
       if(shots[slot]) srcs.push(shots[slot]);
-      else if(trade && trade.screenshotUrls && trade.screenshotUrls[slot]) srcs.push(trade.screenshotUrls[slot]);
+      else if(trade && trade.screenshotUrls && trade.screenshotUrls[slot]) srcs.push(fixDriveUrl(trade.screenshotUrls[slot]));
     });
     if(srcs.length){
       el.innerHTML = srcs.map((src,i) => '<img src="'+src+'" alt="Screenshot '+(i+1)+'" onclick="openLightbox(this.src)" onerror="this.style.display=\'none\'">').join('');
