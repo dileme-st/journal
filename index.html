@@ -481,7 +481,17 @@ textarea.form-control{resize:vertical;min-height:90px}
     <div class="setup-perf-grid" style="margin-top:12px">
       <div class="setup-card"><div class="setup-card-title">Performance por Ativo</div><div id="perfByAsset"></div></div>
       <div class="setup-card"><div class="setup-card-title">Performance por Direção</div><div id="perfByDir"></div></div>
-      <div class="setup-card"><div class="setup-card-title"></div><div></div></div>
+      <div class="setup-card"><div class="setup-card-title">Técnico vs Emocional</div><div id="perfEmotional"></div></div>
+    </div>
+
+    <div class="chart-area" style="margin-top:12px">
+      <div class="chart-title">Confluências vs Performance</div>
+      <div class="conf-table" id="confluencePerf"></div>
+    </div>
+
+    <div class="chart-area mb-4">
+      <div class="chart-title">Heatmap Dia da Semana × Horário</div>
+      <div class="heatmap-wrap"><div class="heatmap-grid" id="heatmapGrid"></div></div>
     </div>
   </div>
 
@@ -700,6 +710,26 @@ textarea.form-control{resize:vertical;min-height:90px}
           <div class="form-grid cols2">
             <div class="form-group"><label for="t-rmult">R Multiple Final</label><input type="number" id="t-rmult" class="form-control" step="any" placeholder="Auto" readonly></div>
             <div class="form-group"><label for="t-pnl">P&L Líquido ($)</label><input type="number" id="t-pnl" class="form-control" step="any" placeholder="Auto" readonly></div>
+          </div>
+          <div class="form-grid cols2 mt-2">
+            <div class="form-group">
+              <label for="t-exitreason">Motivo da Saída</label>
+              <select id="t-exitreason" class="form-control">
+                <option value="">Selecionar...</option>
+                <option value="Alvo">Alvo atingido</option>
+                <option value="Stop">Stop Loss</option>
+                <option value="Trailing">Trailing Stop</option>
+                <option value="BE">Break-even</option>
+                <option value="Antecipacao">Antecipação (manual)</option>
+                <option value="StopManual">Stop manual (emocional)</option>
+                <option value="Parcial">Saída parcial</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="t-entryhour">Hora da Entrada (0–23)</label>
+              <input type="number" id="t-entryhour" class="form-control" min="0" max="23" placeholder="Ex: 9">
+            </div>
           </div>
           <div class="form-group mt-2"><label for="t-mistakes">Erros cometidos</label><textarea id="t-mistakes" class="form-control" placeholder="Descreva erros ou desvios do plano..."></textarea></div>
           <div class="form-group"><label for="t-lessons">Lições aprendidas</label><textarea id="t-lessons" class="form-control" placeholder="O que ficou de aprendizado..."></textarea></div>
@@ -1379,11 +1409,11 @@ function renderScreenshots(){
 // CLEAR / POPULATE FORMS
 // ===========================
 function clearTradeForm(){
-  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-holding','t-mistakes','t-lessons','t-notes'].forEach(id => {
+  ['t-date','t-asset','t-entry','t-sl','t-tp','t-exit','t-risk','t-size','t-rr','t-rmult','t-pnl','t-holding','t-entryhour','t-mistakes','t-lessons','t-notes'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
-  ['t-dir','t-setup','t-bias','t-result'].forEach(id => {
+  ['t-dir','t-setup','t-bias','t-result','t-exitreason'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
@@ -1414,6 +1444,7 @@ function populateTradeForm(t){
   setVal('t-exit',t.exit);
   setVal('t-risk',t.risk); setVal('t-size',t.size); setVal('t-rr',t.rr);
   setVal('t-rmult',t.rmult); setVal('t-pnl',t.pnl); setVal('t-holding',t.holding);
+  setVal('t-exitreason',t.exitReason); setVal('t-entryhour',t.entryHour);
   setVal('t-mistakes',t.mistakes); setVal('t-lessons',t.lessons); setVal('t-notes',t.notes);
   const multField = document.getElementById('t-multiplier');
   if(multField){
@@ -1513,6 +1544,8 @@ function saveTrade(){
       multiplier: document.getElementById('t-multiplier').value,
       rr: document.getElementById('t-rr').value,
       holding: document.getElementById('t-holding').value,
+      exitReason: document.getElementById('t-exitreason').value,
+      entryHour: document.getElementById('t-entryhour').value,
       partial: document.getElementById('tog-partial').classList.contains('on'),
       be: document.getElementById('tog-be').classList.contains('on'),
       trail: document.getElementById('tog-trail').classList.contains('on'),
@@ -1723,6 +1756,11 @@ function renderDashboard(){
   renderHoldingPerf(filtered);
   renderPerfByGroups(filtered);
   renderCalendar(filtered);
+  renderMoMComparison(filtered);
+  renderConfluencePerf(filtered);
+  renderEmotionalPerf(filtered);
+  renderHeatmap(filtered);
+  renderLossStreakAlert(filtered);
 }
 
 function renderEquityChart(tradeList){
@@ -2040,6 +2078,199 @@ function renderCalendar(tradeList){
 }
 
 // ===========================
+// ANALYSIS HELPERS
+// ===========================
+function groupStats(arr){
+  if(!arr.length) return { count:0, wr:0, netR:0, avgR:0 };
+  const wins = arr.filter(t => t.result === 'Win').length;
+  const netR = arr.reduce((s,t) => s + signedR(t), 0);
+  return {
+    count: arr.length,
+    wr: (wins / arr.length * 100).toFixed(0),
+    netR: netR,
+    avgR: netR / arr.length
+  };
+}
+
+function renderMoMComparison(tradeList){
+  const grid = document.getElementById('momGrid');
+  if(!grid) return;
+
+  const now = new Date();
+  const thisMonth = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonth = lastMonthDate.getFullYear()+'-'+String(lastMonthDate.getMonth()+1).padStart(2,'0');
+
+  const cur  = tradeList.filter(t => (t.date||'').substring(0,7) === thisMonth);
+  const prev = tradeList.filter(t => (t.date||'').substring(0,7) === lastMonth);
+  const curStats  = calcStats(cur);
+  const prevStats = calcStats(prev);
+
+  const card = (label, curVal, prevVal, isPct, isMoney) => {
+    const fmt = v => {
+      if(isMoney) return (v >= 0 ? '+' : '-') + '$' + Math.abs(v).toFixed(0);
+      if(isPct) return v + '%';
+      return (v >= 0 ? '+' : '') + v.toFixed(2);
+    };
+    const delta = curVal - prevVal;
+    const dCls = delta > 0 ? 'up' : delta < 0 ? 'down' : 'neutral';
+    const dSign = delta > 0 ? '+' : '';
+    const dSuffix = isMoney ? '$' : isPct ? 'pp' : 'R';
+    const dValue = isMoney ? dSign + Math.abs(delta).toFixed(0) : dSign + delta.toFixed(2);
+    return '<div class="mom-card">'+
+      '<div class="mom-label">'+label+'</div>'+
+      '<div class="mom-values">'+
+        '<span class="mom-current">'+fmt(curVal)+'</span>'+
+        '<span class="mom-prev">vs '+fmt(prevVal)+'</span>'+
+        '<span class="mom-delta '+dCls+'">'+(delta===0?'—':dSign+dValue+dSuffix)+'</span>'+
+      '</div>'+
+    '</div>';
+  };
+
+  grid.innerHTML =
+    card('Net P&L', curStats.totalPnl, prevStats.totalPnl, false, true)+
+    card('Win Rate', parseFloat(curStats.winRate), parseFloat(prevStats.winRate), true, false)+
+    card('Expectancy', curStats.expectancy, prevStats.expectancy, false, false)+
+    card('Trades', curStats.total, prevStats.total, false, false);
+}
+
+function toggleMoM(){
+  const block = document.getElementById('momBlock');
+  const btn = document.getElementById('momToggle');
+  if(!block || !btn) return;
+  const show = !block.classList.contains('show');
+  block.classList.toggle('show', show);
+  btn.classList.toggle('active', show);
+  btn.textContent = (show ? '▾' : '▸') + ' Comparação Mês';
+}
+
+function renderConfluencePerf(tradeList){
+  const el = document.getElementById('confluencePerf');
+  if(!el) return;
+  const closed = tradeList.filter(t => t.result);
+  if(!closed.length){
+    el.innerHTML = '<div class="text-sm text-muted" style="padding:8px 0">Sem dados</div>';
+    return;
+  }
+  const keys = Object.keys(CHECK_LABELS_HTML);
+  const withArr    = k => closed.filter(t => t.checks && t.checks[k]);
+  const withoutArr = k => closed.filter(t => !(t.checks && t.checks[k]));
+
+  const statStr = s => {
+    if(!s.count) return '<span class="muted">—</span>';
+    const cls = s.netR >= 0 ? 'pos' : 'neg';
+    return 'N '+s.count+' · '+s.wr+'% · <span class="'+cls+'">'+(s.netR>=0?'+':'')+s.netR.toFixed(1)+'R</span>';
+  };
+
+  let html = '<div class="conf-row conf-header"><div>Confluência</div><div style="text-align:right">Com ela</div><div style="text-align:right">Sem ela</div></div>';
+  keys.forEach(k => {
+    const wS = groupStats(withArr(k));
+    const woS = groupStats(withoutArr(k));
+    if(!wS.count && !woS.count) return;
+    html += '<div class="conf-row">'+
+      '<div class="conf-name">'+CHECK_LABELS_HTML[k]+'</div>'+
+      '<div class="conf-stats">'+statStr(wS)+'</div>'+
+      '<div class="conf-stats">'+statStr(woS)+'</div>'+
+    '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function renderEmotionalPerf(tradeList){
+  const el = document.getElementById('perfEmotional');
+  if(!el) return;
+  const closed = tradeList.filter(t => t.result);
+  const clean = closed.filter(t => !t.emo);
+  const emo   = closed.filter(t => t.emo);
+
+  const row = (label, s, color) => {
+    if(!s.count) return '<div class="perf-row"><span class="k">'+label+'</span><span class="v">—</span></div>';
+    const netCls = s.netR >= 0 ? 'var(--green)' : 'var(--red)';
+    return '<div class="perf-row"><span class="k">'+label+'</span><span class="v" style="color:'+color+'">'+s.count+' · '+s.wr+'% · <span style="color:'+netCls+'">'+(s.netR>=0?'+':'')+s.netR.toFixed(1)+'R</span></span></div>';
+  };
+
+  el.innerHTML =
+    row('Sem interferência', groupStats(clean), 'var(--green)')+
+    row('Com interferência', groupStats(emo),   'var(--red)');
+}
+
+function renderHeatmap(tradeList){
+  const el = document.getElementById('heatmapGrid');
+  if(!el) return;
+  const closed = tradeList.filter(t => t.result && t.date && t.entryHour !== undefined && t.entryHour !== '');
+  if(!closed.length){
+    el.innerHTML = '<div class="text-sm text-muted" style="padding:8px 0">Sem dados (preencha a Hora da Entrada nos trades)</div>';
+    return;
+  }
+
+  // Buckets de 3 horas: 0-3, 3-6, 6-9, 9-12, 12-15, 15-18, 18-21, 21-24
+  const hourBuckets = ['00–03','03–06','06–09','09–12','12–15','15–18','18–21','21–24'];
+  const days = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+
+  const bucketIdx = h => Math.min(Math.floor(h / 3), 7);
+  const dayIdx = dateStr => {
+    const d = new Date(dateStr + 'T12:00:00');
+    return (d.getDay() + 6) % 7;
+  };
+
+  // matriz[day][bucket] = { sumR, count }
+  const matrix = Array.from({length:7}, () => Array.from({length:8}, () => ({ sumR:0, count:0 })));
+  closed.forEach(t => {
+    const h = parseInt(t.entryHour);
+    if(isNaN(h) || h < 0 || h > 23) return;
+    const di = dayIdx(t.date);
+    const bi = bucketIdx(h);
+    matrix[di][bi].sumR += signedR(t);
+    matrix[di][bi].count += 1;
+  });
+
+  // escala para as classes de cor
+  const allVals = matrix.flat().filter(c => c.count > 0).map(c => c.sumR);
+  const maxAbs = Math.max(...allVals.map(Math.abs), 0.5);
+
+  let html = '<div></div>';
+  hourBuckets.forEach(b => html += '<div class="heatmap-header">'+b+'</div>');
+  days.forEach((day, di) => {
+    html += '<div class="heatmap-row-label">'+day+'</div>';
+    for(let bi = 0; bi < 8; bi++){
+      const cell = matrix[di][bi];
+      if(cell.count === 0){
+        html += '<div class="heatmap-cell"></div>';
+      } else {
+        const v = cell.sumR;
+        const ratio = Math.abs(v) / maxAbs;
+        let cls = v >= 0 ? 'positive-' : 'negative-';
+        cls += ratio >= 0.5 ? '2' : '1';
+        const label = (v >= 0 ? '+' : '') + v.toFixed(1) + 'R';
+        html += '<div class="heatmap-cell has-data '+cls+'" title="'+cell.count+' trade'+(cell.count>1?'s':'')+'">'+label+'</div>';
+      }
+    }
+  });
+  el.innerHTML = html;
+}
+
+function renderLossStreakAlert(tradeList){
+  const el = document.getElementById('streakAlert');
+  const txt = document.getElementById('streakAlertText');
+  if(!el || !txt) return;
+  const closed = tradeList.filter(t => t.result).sort((a, b) => (b.date||'').localeCompare(a.date||''));
+  let streak = 0;
+  const lastResult = closed[0]?.result;
+  if(lastResult){
+    for(const t of closed){
+      if(t.result !== lastResult) break;
+      streak += lastResult === 'Win' ? 1 : -1;
+    }
+  }
+  if(streak <= -3){
+    txt.innerHTML = '<strong>Você está há '+Math.abs(streak)+' losses seguidos.</strong> Histórico sugere reduzir tamanho, revisar setups ou pausar 24h antes do próximo trade.';
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+  
+// ===========================
 // JOURNAL
 // ===========================
 function setJournalSort(column){
@@ -2111,6 +2342,9 @@ function renderJournal(){
               '<div class="expand-row"><span class="k">Risco</span><span class="v">'+(esc(t.risk)||'—')+'%</span></div>'+
               '<div class="expand-row"><span class="k">Tamanho</span><span class="v">'+(esc(t.size)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">Holding</span><span class="v">'+(esc(t.holding)||'—')+'h</span></div>'+
+              '<div class="expand-row"><span class="k">Hora</span><span class="v">'+(esc(t.entryHour)||'—')+':00</span></div>'+
+              '<div class="expand-row"><span class="k">Motivo Saída</span><span class="v">'+(esc(t.exitReason)||'—')+'</span></div>'+
+              '<div class="expand-row"><span class="k">R:R</span><span class="v">'+(esc(t.rr)||'—')+'</span></div>'+
               '<div class="expand-row"><span class="k">R:R</span><span class="v">'+(esc(t.rr)||'—')+'</span></div>'+
             '</div></div>'+
             '<div><div class="expand-section"><h4>Contexto</h4>'+
@@ -2407,11 +2641,11 @@ function resetMultipliers(){
 // EXPORT / IMPORT
 // ===========================
 function exportCSV(){
-  const headers = ['Date','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Exit','Risk %','Size','RR Planned','RR Final','Holding (h)','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
+  const headers = ['Date','Asset','Direction','Setup Type','Weekly Bias','Entry','Stop Loss','Take Profit','Exit','Risk %','Size','RR Planned','RR Final','Holding (h)','Entry Hour','Exit Reason','Result','PnL','Mistakes','Emotional Interference','Partial Taken','Break-even Used','Confluences','Notes'];
   const escapeCSV = v => '"'+String(v ?? '').replace(/"/g,'""')+'"';
   const rows = trades.map(t => {
     const confluences = Object.entries(t.checks||{}).filter(([k,v]) => v && CHECK_LABELS_CSV[k]).map(([k]) => CHECK_LABELS_CSV[k]).join('; ');
-    return [t.date||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.exit||'',t.risk||'',t.size||'',t.rr||'',t.rmult||'',t.holding||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
+    return [t.date||'',t.asset||'',t.dir||'',t.setup||'',t.bias||'',t.entry||'',t.sl||'',t.tp||'',t.exit||'',t.risk||'',t.size||'',t.rr||'',t.rmult||'',t.holding||'',t.entryHour||'',t.exitReason||'',t.result||'',t.pnl||'',t.mistakes||'',t.emo?'Yes':'No',t.partial?'Yes':'No',t.be?'Yes':'No',confluences,t.notes||''].map(escapeCSV).join(',');
   });
   const csv = [headers.map(escapeCSV).join(','), ...rows].join('\n');
   const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
