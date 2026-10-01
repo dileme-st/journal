@@ -1066,7 +1066,7 @@ function fitCanvas(canvas){
   return { ctx, W:w, H:h };
 }
 
-async function compressImage(file, maxDim = 1400, quality = 0.75){
+async function compressImage(file, maxDim = 1200, quality = 0.65){
   if(!file.type.startsWith('image/')) throw new Error('Not an image');
   const dataUrl = await new Promise((resolve,reject) => {
     const r = new FileReader();
@@ -1102,7 +1102,101 @@ function getAssetMultiplier(asset){
 // ===========================
 // STORAGE
 // ===========================
-const DB = {
+
+// ===========================
+// SCREENSHOT STORAGE (IndexedDB)
+// ===========================
+const ScreenshotDB = {
+  db: null,
+  async init(){
+    if(this.db) return this.db;
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('sj_screenshots', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if(!db.objectStoreNames.contains('shots')){
+          db.createObjectStore('shots');
+        }
+      };
+      req.onsuccess = e => { this.db = e.target.result; resolve(this.db); };
+      req.onerror = e => reject(e);
+    });
+  },
+  async put(key, dataUrl){
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('shots', 'readwrite');
+      tx.objectStore('shots').put(dataUrl, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = e => reject(e);
+    });
+  },
+  async get(key){
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('shots', 'readonly');
+      const req = tx.objectStore('shots').get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = e => reject(e);
+    });
+  },
+  async delete(key){
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('shots', 'readwrite');
+      tx.objectStore('shots').delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = e => reject(e);
+    });
+  },
+  async deleteForTrade(tradeId){
+    for(const slot of SHOT_SLOTS){
+      try { await this.delete(tradeId + ':' + slot); } catch(e){}
+    }
+  },
+  async listForTrade(tradeId){
+    const out = {};
+    for(const slot of SHOT_SLOTS){
+      try { out[slot] = await this.get(tradeId + ':' + slot); } catch(e){ out[slot] = null; }
+    }
+    return out;
+  }
+};
+
+async function migrateScreenshotsToIndexedDB(){
+  let migrated = 0;
+  for(const t of trades){
+    if(t.screenshots && t.screenshots.length){
+      for(let i = 0; i < t.screenshots.length; i++){
+        const slot = SHOT_SLOTS[i];
+        if(t.screenshots[i] && slot){
+          try { await ScreenshotDB.put(t.id + ':' + slot, t.screenshots[i]); migrated++; } catch(e){}
+        }
+      }
+      // Legacy: img_htf/img_entry/img_exit
+    } else {
+      const legacy = [t.img_htf, t.img_entry, t.img_exit];
+      for(let i = 0; i < legacy.length; i++){
+        if(legacy[i]){
+          try { await ScreenshotDB.put(t.id + ':' + SHOT_SLOTS[i], legacy[i]); migrated++; } catch(e){}
+        }
+      }
+    }
+    delete t.screenshots;
+    delete t.img_htf;
+    delete t.img_entry;
+    delete t.img_exit;
+    t.hasScreenshots = !!(await ScreenshotDB.get(t.id + ':htf')
+                       || await ScreenshotDB.get(t.id + ':entry')
+                       || await ScreenshotDB.get(t.id + ':exit'));
+  }
+  if(migrated > 0){
+    save();
+    console.log('Migrated ' + migrated + ' screenshots to IndexedDB');
+  }
+}
+  
+  const DB = {
   get(key,def){ try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; } },
   set(key,val){
     try { localStorage.setItem(key, JSON.stringify(val)); return true; }
@@ -1156,6 +1250,7 @@ function navigate(page, el){
   pageEl.classList.add('active');
   if(el) el.classList.add('active');
   DB.set('sj_lastpage', page);
+  if(page === 'journal') journalDisplayCount = 50;
   renderPage(page);
 }
 
@@ -1194,13 +1289,13 @@ function closeAllPanels(){
   document.getElementById('panelOverlay').classList.remove('open');
 }
 
-function openTradePanel(tradeId = null){
+async function openTradePanel(tradeId = null){
   editingTrade = tradeId ? String(tradeId) : null;
   document.getElementById('tradePanelTitle').textContent = tradeId ? 'Editar Operação' : 'Nova Operação';
   clearTradeForm();
   if(tradeId){
     const t = trades.find(x => String(x.id) === String(tradeId));
-    if(t) populateTradeForm(t);
+    if(t) await populateTradeForm(t);
   } else {
     document.getElementById('t-date').value = new Date().toISOString().split('T')[0];
   }
@@ -1623,7 +1718,7 @@ function clearTradeForm(){
   renderScreenshots();
 }
 
-function populateTradeForm(t){
+async function populateTradeForm(t){
   const setVal = (id,val) => { const el = document.getElementById(id); if(el) el.value = val ?? ''; };
   setVal('t-date',t.date); setVal('t-asset',t.asset);
   setVal('t-entry',t.entry); setVal('t-sl',t.sl); setVal('t-tp',t.tp);
@@ -1633,28 +1728,29 @@ function populateTradeForm(t){
   setVal('t-exitreason',t.exitReason);
   setVal('t-exitdate',t.exitDate);
   setVal('t-exittime',t.exitTime);
-  // Migração: se não tem entryTime salvo, mas tem entryHour antigo
   if(t.entryTime){
     setVal('t-entrytime',t.entryTime);
   } else if(t.entryHour !== undefined && t.entryHour !== ''){
     setVal('t-entrytime', String(t.entryHour).padStart(2,'0') + ':00');
   }
-  // Recalcula holding a partir das datas preenchidas
-  recalcHolding();
   setVal('t-mistakes',t.mistakes); setVal('t-lessons',t.lessons); setVal('t-notes',t.notes);
+
   const multField = document.getElementById('t-multiplier');
   if(multField){
     const m = t.multiplier || getAssetMultiplier(t.asset);
     multField.value = m;
     multField.dataset.userEdited = 'true';
   }
+
   const panel = document.getElementById('tradePanel');
   ['dir','setup','bias','result'].forEach(k => setRadioValue('t-'+k, t[k], panel));
+
   const checks = t.checks || {};
   Object.keys(checks).forEach(k => {
     const el = document.getElementById(k);
     if(el) el.checked = !!checks[k];
   });
+
   const setToggle = (id,on) => {
     const el = document.getElementById(id);
     if(!el) return;
@@ -1665,13 +1761,8 @@ function populateTradeForm(t){
   setToggle('tog-be',t.be);
   setToggle('tog-trail',t.trail);
   setToggle('tog-emo',t.emo);
-    const setToggleB = (id,on) => {
-    const el = document.getElementById(id);
-    if(!el) return;
-    el.classList.toggle('on', !!on);
-    el.setAttribute('aria-checked', on ? 'true' : 'false');
-  };
-  setToggleB('tog-partials', t.usePartials);
+  setToggle('tog-partials', t.usePartials);
+
   const pb = document.getElementById('partialsBlock');
   if(pb) pb.style.display = t.usePartials ? 'block' : 'none';
   const partials = t.partials || [];
@@ -1680,11 +1771,18 @@ function populateTradeForm(t){
     setVal('t-p'+n+'-price', p ? p.price : '');
     setVal('t-p'+n+'-pct', p ? p.pct : '');
   });
-  currentScreenshots = Array.isArray(t.screenshots) ? t.screenshots.slice() : [];
-  if(!currentScreenshots.some(Boolean)){
-    currentScreenshots = [t.img_htf, t.img_entry, t.img_exit].filter(Boolean);
+
+  // Carrega screenshots do IndexedDB
+  currentScreenshots = [];
+  if(t.id){
+    const shots = await ScreenshotDB.listForTrade(String(t.id));
+    SHOT_SLOTS.forEach(slot => {
+      if(shots[slot]) currentScreenshots[SHOT_INDEX[slot]] = shots[slot];
+    });
   }
   renderScreenshots();
+  recalcHolding();
+  recalcRAndPnl();
 }
 
 function clearWatchForm(){
@@ -1717,14 +1815,14 @@ function populateWatchForm(w){
 // ===========================
 // SAVES
 // ===========================
-function saveTrade(){
+async function saveTrade(){
   const btn = document.getElementById('tradeSaveBtn');
   if(btn) btn.disabled = true;
   try {
     const result = document.getElementById('t-result').value;
-    const shots = SHOT_SLOTS.map(s => currentScreenshots[SHOT_INDEX[s]] || null);
+    const tradeId = editingTrade || Date.now().toString();
     const trade = {
-      id: editingTrade || Date.now().toString(),
+      id: tradeId,
       date: document.getElementById('t-date').value,
       asset: document.getElementById('t-asset').value,
       dir: document.getElementById('t-dir').value,
@@ -1769,29 +1867,38 @@ function saveTrade(){
         const h = parseInt(t.split(':')[0]);
         return isNaN(h) ? '' : h;
       })(),
-          partials: usePartials() ? [
+      partial: document.getElementById('tog-partial').classList.contains('on'),
+      be: document.getElementById('tog-be').classList.contains('on'),
+      trail: document.getElementById('tog-trail').classList.contains('on'),
+      emo: document.getElementById('tog-emo').classList.contains('on'),
+      partials: usePartials() ? [
         { price: document.getElementById('t-p1-price').value, pct: document.getElementById('t-p1-pct').value },
         { price: document.getElementById('t-p2-price').value, pct: document.getElementById('t-p2-pct').value },
         { price: document.getElementById('t-p3-price').value, pct: document.getElementById('t-p3-pct').value }
       ].filter(p => p.price !== '' || p.pct !== '') : [],
       usePartials: usePartials(),
-      partial: document.getElementById('tog-partial').classList.contains('on'),
-      be: document.getElementById('tog-be').classList.contains('on'),
-      trail: document.getElementById('tog-trail').classList.contains('on'),
-      emo: document.getElementById('tog-emo').classList.contains('on'),
       result: result,
       rmult: result ? document.getElementById('t-rmult').value : '',
       pnl:   result ? document.getElementById('t-pnl').value   : '',
       mistakes: document.getElementById('t-mistakes').value,
       lessons: document.getElementById('t-lessons').value,
       notes: document.getElementById('t-notes').value,
-      screenshots: shots.filter(Boolean),
-      img_htf: shots[0] || '',
-      img_entry: shots[1] || '',
-      img_exit: shots[2] || '',
+      hasScreenshots: currentScreenshots.some(Boolean),
       status: result ? 'Encerrado' : 'Aberto',
       createdAt: new Date().toISOString()
     };
+
+    // Salva screenshots no IndexedDB
+    for(const slot of SHOT_SLOTS){
+      const data = currentScreenshots[SHOT_INDEX[slot]];
+      const key = tradeId + ':' + slot;
+      if(data){
+        await ScreenshotDB.put(key, data);
+      } else {
+        await ScreenshotDB.delete(key);
+      }
+    }
+
     if(editingTrade){
       const idx = trades.findIndex(x => String(x.id) === String(editingTrade));
       if(idx > -1) trades[idx] = trade;
@@ -1804,6 +1911,9 @@ function saveTrade(){
     closePanel('tradePanel');
     renderJournal();
     renderDashboard();
+  } catch(err){
+    console.error('Erro ao salvar trade:', err);
+    showToast('Erro ao salvar: ' + err.message);
   } finally {
     if(btn) btn.disabled = false;
   }
@@ -2566,6 +2676,7 @@ function setJournalSort(column){
     journalSort.column = column;
     journalSort.direction = 'desc';
   }
+  journalDisplayCount = 50;
   renderJournal();
 }
 
@@ -2602,6 +2713,8 @@ function updateSortArrows(){
   });
 }
 
+let journalDisplayCount = 50;
+
 function renderJournal(){
   const tbody = document.getElementById('journalBody');
   if(!trades.length){
@@ -2610,12 +2723,10 @@ function renderJournal(){
     return;
   }
   const sortedTrades = sortTradesForJournal(trades);
-  tbody.innerHTML = sortedTrades.map(t => {
+  const visible = sortedTrades.slice(0, journalDisplayCount);
+  tbody.innerHTML = visible.map(t => {
     const expanded = expandedTrades.has(String(t.id)) ? 'table-row' : 'none';
-    const shots = (t.screenshots && t.screenshots.length) ? t.screenshots : [t.img_htf, t.img_entry, t.img_exit].filter(Boolean);
-    const shotsHtml = shots.length
-      ? '<div class="expand-imgs">'+shots.map((src,i) => '<img src="'+esc(src)+'" alt="Screenshot '+(i+1)+'" onclick="openLightbox(this.src)">').join('')+'</div>'
-      : '';
+
     return tradeRow(t,true) +
       '<tr id="expand-'+esc(t.id)+'" style="display:'+expanded+'">'+
         '<td colspan="9" style="padding:0">'+
@@ -2652,17 +2763,47 @@ function renderJournal(){
               (t.mistakes ? '<div style="margin-top:8px"><div style="font-size:11px;color:var(--red);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Erros</div><div class="expand-note">'+esc(t.mistakes)+'</div></div>' : '')+
               (t.lessons ? '<div style="margin-top:8px"><div style="font-size:11px;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Lições</div><div class="expand-note">'+esc(t.lessons)+'</div></div>' : '')+
             '</div>'+
-            shotsHtml+
-            '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
-              '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTradePanel(\''+esc(t.id)+'\')">Editar</button>'+
+            '<div class="expand-imgs" data-trade-id="'+esc(t.id)+'" data-loaded="0"></div>'+
+            '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+              '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTradePanel(\''+esc(t.id)+'\')">Editar</button>'+
               '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();duplicateTrade(\''+esc(t.id)+'\')">Duplicar</button>'+
               '<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteTrade(\''+esc(t.id)+'\')">Excluir</button>'+
             '</div></div>'+
           '</div>'+
         '</td>'+
       '</tr>';
-  }).join('');
+  }).join('') + (sortedTrades.length > journalDisplayCount
+    ? '<tr><td colspan="9" style="text-align:center;padding:20px"><button class="btn btn-ghost btn-sm" onclick="loadMoreJournal()">Carregar mais ('+(sortedTrades.length - journalDisplayCount)+' restantes)</button></td></tr>'
+    : '');
   updateSortArrows();
+  // Carrega imagens dos trades já expandidos
+  document.querySelectorAll('.expand-imgs[data-loaded="0"]').forEach(el => {
+    const tr = el.closest('tr');
+    if(tr && tr.style.display !== 'none') loadScreenshotsInto(el);
+  });
+}
+
+function loadMoreJournal(){
+  journalDisplayCount += 50;
+  renderJournal();
+}
+
+async function loadScreenshotsInto(el){
+  if(!el || el.dataset.loaded === '1') return;
+  const tradeId = el.dataset.tradeId;
+  if(!tradeId) return;
+  el.dataset.loaded = 'loading';
+  try {
+    const shots = await ScreenshotDB.listForTrade(tradeId);
+    const srcs = SHOT_SLOTS.map(s => shots[s]).filter(Boolean);
+    if(srcs.length){
+      el.innerHTML = srcs.map((src,i) => '<img src="'+src+'" alt="Screenshot '+(i+1)+'" onclick="openLightbox(this.src)">').join('');
+    } else {
+      el.innerHTML = '';
+    }
+    el.dataset.loaded = '1';
+  } catch(e){
+    el.dataset.loaded = '0';
+  }
 }
 
 function tradeRow(t, expandable){
@@ -2719,12 +2860,18 @@ function toggleExpand(id){
   if(!row) return;
   const isOpen = row.style.display !== 'none';
   row.style.display = isOpen ? 'none' : 'table-row';
-  if(isOpen) expandedTrades.delete(String(id));
-  else expandedTrades.add(String(id));
+  if(isOpen){
+    expandedTrades.delete(String(id));
+  } else {
+    expandedTrades.add(String(id));
+    const imgBox = row.querySelector('.expand-imgs[data-loaded="0"]');
+    if(imgBox) loadScreenshotsInto(imgBox);
+  }
 }
 
-function deleteTrade(id){
+async function deleteTrade(id){
   if(!confirm('Excluir esta operação?')) return;
+  try { await ScreenshotDB.deleteForTrade(String(id)); } catch(e){}
   trades = trades.filter(t => String(t.id) !== String(id));
   expandedTrades.delete(String(id));
   save();
@@ -2733,13 +2880,21 @@ function deleteTrade(id){
   renderDashboard();
 }
 
-function duplicateTrade(id){
+async function duplicateTrade(id){
   const t = trades.find(x => String(x.id) === String(id));
   if(!t) return;
-  const copy = Object.assign({}, t, { id: Date.now().toString(), createdAt: new Date().toISOString() });
+  const newId = Date.now().toString();
+  const copy = Object.assign({}, t, { id: newId, createdAt: new Date().toISOString() });
   trades.unshift(copy);
   save();
   syncToSheet('saveTrade', copy);
+  // Copia screenshots no IndexedDB
+  try {
+    for(const slot of SHOT_SLOTS){
+      const data = await ScreenshotDB.get(String(id) + ':' + slot);
+      if(data) await ScreenshotDB.put(newId + ':' + slot, data);
+    }
+  } catch(e){}
   renderJournal();
   renderDashboard();
 }
@@ -2963,8 +3118,24 @@ function exportCSV(){
   showToast('CSV exportado com sucesso!');
 }
 
-function exportData(){
-  const data = { version:1, trades, watchlist, reviews, systemData, settings, exportedAt:new Date().toISOString() };
+async function exportData(){
+  showToast('Preparando backup...');
+  const screenshots = {};
+  try {
+    await ScreenshotDB.init();
+    for(const t of trades){
+      const shots = await ScreenshotDB.listForTrade(String(t.id));
+      const clean = {};
+      SHOT_SLOTS.forEach(slot => { if(shots[slot]) clean[slot] = shots[slot]; });
+      if(Object.keys(clean).length) screenshots[String(t.id)] = clean;
+    }
+  } catch(e){ console.warn('Screenshots não exportadas:', e); }
+  const data = {
+    version: 2,
+    trades, watchlist, reviews, systemData, settings,
+    screenshots,
+    exportedAt: new Date().toISOString()
+  };
   const blob = new Blob([JSON.stringify(data,null,2)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2972,13 +3143,14 @@ function exportData(){
   a.download = 'swing-journal-backup-'+new Date().toISOString().split('T')[0]+'.json';
   a.click();
   URL.revokeObjectURL(url);
+  showToast('Backup exportado.');
 }
 
 function importData(event){
   const file = event.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result);
       if(data.trades) trades = data.trades;
@@ -2986,11 +3158,21 @@ function importData(event){
       if(data.reviews) reviews = data.reviews;
       if(data.systemData) systemData = data.systemData;
       if(data.settings) settings = data.settings;
+      // Restaura screenshots no IndexedDB
+      if(data.screenshots){
+        for(const tradeId in data.screenshots){
+          const shots = data.screenshots[tradeId];
+          for(const slot in shots){
+            try { await ScreenshotDB.put(tradeId + ':' + slot, shots[slot]); } catch(err){}
+          }
+        }
+      }
       save();
       document.getElementById('accountName').textContent = settings.accountName || 'Minha conta';
       renderDashboard();
       showToast('Dados importados com sucesso!');
-    } catch {
+    } catch(err){
+      console.error(err);
       alert('Erro ao importar. Verifique o arquivo JSON.');
     }
   };
@@ -3031,7 +3213,15 @@ function showToast(msg){
 // ===========================
 // INIT
 // ===========================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await ScreenshotDB.init();
+    await migrateScreenshotsToIndexedDB();
+  } catch(e){
+    console.warn('IndexedDB init failed:', e);
+    showToast('⚠ Navegador sem suporte a IndexedDB. Screenshots serão temporárias.');
+  }
+
   document.querySelectorAll('[data-asset-select]').forEach(sel => {
     const emptyLabel = sel.dataset.emptyLabel || 'Todos';
     const current = sel.value;
