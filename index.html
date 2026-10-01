@@ -1201,6 +1201,19 @@ function selectRadio(btn){
   const field = btn.dataset.field;
   const value = btn.dataset.value;
   const group = btn.closest('.radio-group');
+  const hidden = document.getElementById(field);
+
+  // Toggle: clicar no botão já selecionado desmarca (só para o Resultado,
+  // permitindo deixar o trade como "Aberto")
+  const isAlreadySelected = btn.classList.contains('selected');
+  if(field === 't-result' && isAlreadySelected){
+    btn.classList.remove('selected');
+    btn.setAttribute('aria-pressed','false');
+    if(hidden) hidden.value = '';
+    recalcRAndPnl();
+    return;
+  }
+
   if(group){
     group.querySelectorAll('.radio-btn').forEach(b => {
       b.classList.remove('selected');
@@ -1209,7 +1222,6 @@ function selectRadio(btn){
   }
   btn.classList.add('selected');
   btn.setAttribute('aria-pressed','true');
-  const hidden = document.getElementById(field);
   if(hidden) hidden.value = value;
   if(field === 't-dir' || field === 't-result') recalcRAndPnl();
   if(field === 't-dir') recalcSizeFromRisk();
@@ -1760,7 +1772,7 @@ function renderDashboard(){
   renderConfluencePerf(filtered);
   renderEmotionalPerf(filtered);
   renderHeatmap(filtered);
-  renderLossStreakAlert(filtered);
+  renderLossStreakAlert(trades); // sempre considera todos os trades, ignora filtros
 }
 
 function renderEquityChart(tradeList){
