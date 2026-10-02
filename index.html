@@ -46,8 +46,30 @@ nav{flex:1;padding:8px 8px;overflow-y:auto;overflow-x:hidden}
 .nav-label{opacity:1;transition:opacity .2s;font-weight:500}
 #sidebar.collapsed .nav-label{opacity:0;pointer-events:none}
 .sidebar-bottom{padding:12px 8px;border-top:1px solid var(--border)}
-.account-name{font-size:11px;color:var(--muted);padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.account-name{font-size:11px;color:var(--muted);padding:8px 10px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #sidebar.collapsed .account-name{display:none}
+
+/* SYNC STATUS */
+.sync-status{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:11px;color:var(--muted);border-radius:6px;transition:color .2s;cursor:default;user-select:none}
+.sync-status:hover{background:rgba(255,255,255,0.04)}
+#sidebar.collapsed .sync-status{justify-content:center;padding:6px 4px}
+#sidebar.collapsed .sync-status .sync-label{display:none}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background .2s;box-shadow:0 0 0 0 rgba(255,255,255,0)}
+.sync-status.syncing .sync-dot{background:var(--yellow);animation:syncPulse 1s ease-in-out infinite}
+.sync-status.synced .sync-dot{background:var(--green);box-shadow:0 0 6px rgba(34,197,94,.6)}
+.sync-status.synced .sync-label{color:var(--green)}
+.sync-status.pending .sync-dot{background:var(--yellow)}
+.sync-status.pending .sync-label{color:var(--yellow)}
+.sync-status.error .sync-dot{background:var(--red);animation:syncErrorPulse 1.4s ease-in-out infinite}
+.sync-status.error .sync-label{color:var(--red)}
+@keyframes syncPulse{
+  0%,100%{opacity:1;transform:scale(1);box-shadow:0 0 0 0 rgba(245,158,11,.7)}
+  50%{opacity:.5;transform:scale(1.25);box-shadow:0 0 0 4px rgba(245,158,11,0)}
+}
+@keyframes syncErrorPulse{
+  0%,100%{opacity:1}
+  50%{opacity:.35}
+}
 
 /* MAIN */
 #main{margin-left:var(--sidebar);flex:1;height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease;-webkit-overflow-scrolling:touch}
@@ -432,6 +454,10 @@ textarea.form-control{resize:vertical;min-height:90px}
   </nav>
   <div class="sidebar-bottom">
     <div class="account-name" id="accountName">Minha conta</div>
+    <div class="sync-status" id="syncStatus" title="Status da sincronização">
+      <span class="sync-dot" id="syncDot"></span>
+      <span class="sync-label" id="syncLabel">Local salvo</span>
+    </div>
   </div>
 </aside>
 
@@ -1008,8 +1034,83 @@ const ASSET_MULTIPLIER_DEFAULTS = {
 // ===========================
 const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxotTubk-Tsg_XwicQKEN6mdH7PwfgJeJKUnqAEncJvqflcvBf9t2JYzaz-CYOOskXh/exec';
 
+// ---------- SYNC STATUS ----------
+const syncState = {
+  status: 'local',           // 'local' | 'syncing' | 'synced' | 'pending' | 'error'
+  inFlight: 0,
+  successTimer: null,
+  errorTimer: null,
+  lastErrorMessage: '',
+  lastSuccessAt: 0
+};
+
+function setSyncStatus(status){
+  if(syncState.status === status) return;
+  syncState.status = status;
+  updateSyncStatusUI();
+}
+
+function updateSyncStatusUI(){
+  const wrap = document.getElementById('syncStatus');
+  const label = document.getElementById('syncLabel');
+  if(!wrap || !label) return;
+
+  wrap.classList.remove('syncing','synced','pending','error');
+
+  let text = 'Local salvo';
+  let cls = '';
+
+  switch(syncState.status){
+    case 'syncing': text = 'Sincronizando...';        cls = 'syncing'; break;
+    case 'synced':  text = 'Sincronização enviada';   cls = 'synced';  break;
+    case 'pending': text = 'Sincronização pendente';  cls = 'pending'; break;
+    case 'error':   text = 'Falha na sincronização';  cls = 'error';   break;
+    default:        text = 'Local salvo';
+  }
+
+  if(cls) wrap.classList.add(cls);
+  label.textContent = text;
+  wrap.title = 'Status: ' + text + (syncState.lastErrorMessage ? '\nÚltimo erro: ' + syncState.lastErrorMessage : '');
+}
+
+function markSyncing(){
+  syncState.inFlight++;
+  if(syncState.successTimer){ clearTimeout(syncState.successTimer); syncState.successTimer = null; }
+  if(syncState.errorTimer){ clearTimeout(syncState.errorTimer); syncState.errorTimer = null; }
+  setSyncStatus('syncing');
+}
+
+function markSynced(){
+  syncState.inFlight = Math.max(0, syncState.inFlight - 1);
+  if(syncState.inFlight > 0) return;
+  syncState.lastSuccessAt = Date.now();
+  syncState.lastErrorMessage = '';
+  setSyncStatus('synced');
+  if(syncState.successTimer) clearTimeout(syncState.successTimer);
+  syncState.successTimer = setTimeout(() => {
+    if(syncState.inFlight === 0 && syncState.status === 'synced'){
+      setSyncStatus(navigator.onLine ? 'local' : 'pending');
+    }
+  }, 3000);
+}
+
+function markSyncError(err){
+  syncState.inFlight = Math.max(0, syncState.inFlight - 1);
+  syncState.lastErrorMessage = err && err.message ? err.message : String(err || 'desconhecido');
+  setSyncStatus('error');
+  if(syncState.errorTimer) clearTimeout(syncState.errorTimer);
+  syncState.errorTimer = setTimeout(() => {
+    if(syncState.inFlight === 0 && syncState.status === 'error'){
+      setSyncStatus(navigator.onLine ? 'local' : 'pending');
+    }
+  }, 8000);
+}
+
 async function syncToSheet(action, data){
   if(!SHEET_WEBHOOK_URL) return;
+  if(!navigator.onLine){ setSyncStatus('pending'); return; }
+
+  markSyncing();
   try {
     await fetch(SHEET_WEBHOOK_URL, {
       method: 'POST',
@@ -1017,8 +1118,10 @@ async function syncToSheet(action, data){
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, data })
     });
+    markSynced();
   } catch(e){
     console.warn('Sync failed:', action, e);
+    markSyncError(e);
   }
 }
 
@@ -1073,6 +1176,9 @@ async function loadFromSheet(silent){
     normalizeAllDates();
     const acc = document.getElementById('accountName');
     if(acc) acc.textContent = settings.accountName || 'Minha conta';
+      // Inicializa status de sincronização
+  updateSyncStatusUI();
+  if(!navigator.onLine) setSyncStatus('pending');
     renderDashboard();
     if(!silent) showToast('Dados carregados da planilha!');
   } catch(e){
@@ -3651,6 +3757,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
+// ---------- ONLINE / OFFLINE ----------
+window.addEventListener('online', () => {
+  if(syncState.status === 'pending') setSyncStatus('local');
+  updateSyncStatusUI();
+});
+window.addEventListener('offline', () => {
+  setSyncStatus('pending');
+});
+  
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
