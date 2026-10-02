@@ -446,6 +446,14 @@ textarea.form-control{resize:vertical;min-height:90px}
   .stats-grid,.setup-perf-grid{grid-template-columns:1fr}
   .table-wrap{overflow-x:auto}
   .trade-expand.open{grid-template-columns:1fr}
+  .sync-status{
+  justify-content:center;
+  padding:7px 0;
+}
+
+.sync-text{
+  display:none;
+}
 }
 </style>
 </head>
@@ -487,6 +495,10 @@ textarea.form-control{resize:vertical;min-height:90px}
   </nav>
   <div class="sidebar-bottom">
     <div class="account-name" id="accountName">Minha conta</div>
+    <div id="syncStatus" class="sync-status" title="Status dos dados">
+  <span class="sync-dot"></span>
+  <span class="sync-text">Salvo</span>
+</div>
   </div>
   <div id="syncStatus" class="sync-status">
   <span class="sync-dot"></span>
