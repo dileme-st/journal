@@ -48,116 +48,6 @@ nav{flex:1;padding:8px 8px;overflow-y:auto;overflow-x:hidden}
 .sidebar-bottom{padding:12px 8px;border-top:1px solid var(--border)}
 .account-name{font-size:11px;color:var(--muted);padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #sidebar.collapsed .account-name{display:none}
-.sync-status{
-  display:flex;
-  align-items:center;
-  gap:7px;
-  padding:7px 10px;
-  font-size:10px;
-  color:var(--muted);
-  white-space:nowrap;
-  overflow:hidden;
-}
-
-.sync-dot{
-  width:7px;
-  height:7px;
-  min-width:7px;
-  border-radius:50%;
-  background:var(--muted);
-}
-
-.sync-status.online .sync-dot{
-  background:var(--green);
-}
-
-.sync-status.syncing .sync-dot{
-  background:var(--yellow);
-  animation:syncPulse 1s infinite;
-}
-
-.sync-status.pending .sync-dot{
-  background:var(--yellow);
-}
-
-.sync-status.error .sync-dot{
-  background:var(--red);
-}
-
-.sync-status.offline .sync-dot{
-  background:var(--muted);
-}
-
-@keyframes syncPulse{
-  0%,100%{opacity:.4}
-  50%{opacity:1}
-}
-
- .sync-popover{
-  position:absolute;
-  left:calc(100% + 10px);
-  bottom:10px;
-  width:230px;
-  padding:14px;
-  background:var(--panel);
-  border:1px solid var(--border);
-  border-radius:10px;
-  box-shadow:0 12px 30px rgba(0,0,0,.35);
-  display:none;
-  z-index:1000;
-}
-
-.sync-popover.show{
-  display:block;
-}
-
-.sync-popover-title{
-  font-size:10px;
-  font-weight:700;
-  letter-spacing:.08em;
-  color:var(--muted);
-  margin-bottom:12px;
-}
-
-.sync-popover-row{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  font-size:11px;
-  color:var(--text);
-  padding:7px 0;
-}
-
-.sync-popover-dot{
-  width:7px;
-  height:7px;
-  min-width:7px;
-  border-radius:50%;
-  background:var(--green);
-}
-
-.sync-popover-backup{
-  justify-content:space-between;
-  border-top:1px solid var(--border);
-  margin-top:5px;
-  padding-top:10px;
-  color:var(--muted);
-}
-
-#syncPopoverBackup{
-  color:var(--text);
-} 
-
-@media(max-width:760px){
-  .sync-status{
-    justify-content:center;
-    padding:7px 0;
-  }
-
-  .sync-text{
-    display:none;
-  }
-}
 
 /* MAIN */
 #main{margin-left:var(--sidebar);flex:1;height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease;-webkit-overflow-scrolling:touch}
@@ -501,14 +391,6 @@ textarea.form-control{resize:vertical;min-height:90px}
   .stats-grid,.setup-perf-grid{grid-template-columns:1fr}
   .table-wrap{overflow-x:auto}
   .trade-expand.open{grid-template-columns:1fr}
-  .sync-status{
-  justify-content:center;
-  padding:7px 0;
-}
-
-.sync-text{
-  display:none;
-}
 }
 </style>
 </head>
@@ -550,33 +432,7 @@ textarea.form-control{resize:vertical;min-height:90px}
   </nav>
   <div class="sidebar-bottom">
     <div class="account-name" id="accountName">Minha conta</div>
-    <div id="syncStatus" class="sync-status" title="Status dos dados">
-  <span class="sync-dot"></span>
-  <span class="sync-text">Salvo</span>
-</div>
   </div>
-  <div id="syncStatus" class="sync-status">
-  <span class="sync-dot"></span>
-  <span class="sync-text">Local salvo</span>
-</div>
-  <div id="syncPopover" class="sync-popover">
-  <div class="sync-popover-title">STATUS DOS DADOS</div>
-
-  <div class="sync-popover-row">
-    <span class="sync-popover-dot"></span>
-    <span id="syncPopoverLocal">Salvo neste dispositivo</span>
-  </div>
-
-  <div class="sync-popover-row">
-    <span class="sync-popover-dot"></span>
-    <span id="syncPopoverCloud">Sincronização pendente</span>
-  </div>
-
-  <div class="sync-popover-row sync-popover-backup">
-    <span>Backup</span>
-    <span id="syncPopoverBackup">Não realizado</span>
-  </div>
-</div>
 </aside>
 
 <main id="main">
@@ -686,42 +542,8 @@ textarea.form-control{resize:vertical;min-height:90px}
         Nova Operação
       </button>
     </div>
-
-    <div class="filter-card">
-      <div class="filter-head">
-        <div class="filter-title">Filtros do Journal</div>
-        <div class="filter-status" id="journalFilterStatus">Todos os trades</div>
-      </div>
-      <div class="filter-grid" style="grid-template-columns:repeat(4,minmax(130px,1fr))">
-        <div class="form-group"><label for="jf-month">Mês</label><input type="month" id="jf-month" class="form-control" onchange="applyJournalFilters()"></div>
-        <div class="form-group"><label for="jf-asset">Ativo</label><select id="jf-asset" class="form-control" data-asset-select data-empty-label="Todos" onchange="applyJournalFilters()"></select></div>
-        <div class="form-group"><label for="jf-status">Status</label>
-          <select id="jf-status" class="form-control" onchange="applyJournalFilters()">
-            <option value="">Todos</option>
-            <option value="Aberto">Aberto</option>
-            <option value="Encerrado">Encerrado</option>
-            <option value="Win">Win</option>
-            <option value="Loss">Loss</option>
-            <option value="BE">Break-even</option>
-          </select>
-        </div>
-        <div class="form-group" style="align-self:end">
-          <button class="btn btn-ghost btn-sm" onclick="resetJournalFilters()" style="width:100%">Limpar filtros</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="journalSelectionBar" style="display:none;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:var(--radius);padding:12px 16px;margin-bottom:14px;display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <span style="font-size:13px;color:var(--text)"><strong id="journalSelectionCount">0</strong> selecionado(s)</span>
-      <div class="flex gap-2" style="flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Limpar seleção</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteSelectedTrades()">Excluir selecionados</button>
-      </div>
-    </div>
-
     <div class="table-wrap">
       <table><thead><tr>
-        <th style="width:36px;padding-right:0"><input type="checkbox" id="journalSelectAll" onclick="toggleSelectAll(this.checked)" title="Selecionar todos os visíveis" style="cursor:pointer;accent-color:var(--accent2)"></th>
         <th class="sortable" data-sort="date" onclick="setJournalSort('date')">Data <span class="sort-arrow"></span></th>
         <th class="sortable" data-sort="asset" onclick="setJournalSort('asset')">Ativo <span class="sort-arrow"></span></th>
         <th class="sortable" data-sort="dir" onclick="setJournalSort('dir')">Direção <span class="sort-arrow"></span></th>
@@ -1152,125 +974,19 @@ const ASSET_MULTIPLIER_DEFAULTS = {
 // ===========================
 const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxotTubk-Tsg_XwicQKEN6mdH7PwfgJeJKUnqAEncJvqflcvBf9t2JYzaz-CYOOskXh/exec';
 
-let syncState = {
-  status: 'local',
-  lastSync: null
-};
-
-function updateSyncStatus(status, text){
-
-  syncState.status = status;
-
-  const el = document.getElementById('syncStatus');
-  if(!el) return;
-
-  el.className = 'sync-status ' + status;
-
-  const label = el.querySelector('.sync-text');
-  if(label) label.textContent = text;
-}
-
-function toggleSyncPopover(){
-  const popover = document.getElementById('syncPopover');
-  if(!popover) return;
-
-  popover.classList.toggle('show');
-}
-
-function markLocalSaved(){
-  updateSyncStatus('online', 'Local salvo');
-}
-
-const syncStatusEl = document.getElementById('syncStatus');
-
-if(syncStatusEl){
-  syncStatusEl.addEventListener('click', toggleSyncPopover);
-}
-
-document.addEventListener('click', function(event){
-  const popover = document.getElementById('syncPopover');
-  const status = document.getElementById('syncStatus');
-
-  if(!popover || !status) return;
-
-  if(!popover.contains(event.target) && !status.contains(event.target)){
-    popover.classList.remove('show');
-  }
-});
-
-function markSyncing(){
-  updateSyncStatus('syncing', 'Sincronizando...');
-}
-
-function markSyncPending(){
-  updateSyncStatus('pending', 'Sincronização pendente');
-}
-
-function markSyncError(){
-  updateSyncStatus('error', 'Falha na sincronização');
-}
-
-function markSyncSent(){
-  syncState.lastSync = new Date().toISOString();
-  updateSyncStatus('online', 'Sincronização enviada');
-}
-  
 async function syncToSheet(action, data){
-
-  if(!SHEET_WEBHOOK_URL){
-    markSyncPending();
-    return false;
-  }
-
-  if(!navigator.onLine){
-    markSyncPending();
-    return false;
-  }
-
-  markSyncing();
-
+  if(!SHEET_WEBHOOK_URL) return;
   try {
-
     await fetch(SHEET_WEBHOOK_URL, {
       method: 'POST',
       mode: 'no-cors',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8'
-      },
-      body: JSON.stringify({
-        action,
-        data
-      })
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, data })
     });
-
-    // Como o POST usa no-cors,
-    // não podemos confirmar a resposta do servidor.
-    // Portanto o texto correto é "Sincronização enviada".
-    markSyncSent();
-
-    return true;
-
   } catch(e){
-
     console.warn('Sync failed:', action, e);
-
-    markSyncError();
-
-    return false;
   }
 }
-
-window.addEventListener('online', () => {
-  markLocalSaved();
-
-  setTimeout(() => {
-    syncAllToSheet();
-  }, 500);
-});
-
-window.addEventListener('offline', () => {
-  markSyncPending();
-});
 
 async function uploadScreenshotToSheet(tradeId, slot, dataUrl){
   if(!SHEET_WEBHOOK_URL) return null;
@@ -1553,8 +1269,6 @@ let currentScreenshots = [];
 let lastFocusedSlot = null;
 let dashboardFilters = { month:'', from:'', to:'', asset:'', setup:'', result:'' };
 let journalSort = { column: 'date', direction: 'desc' };
-let journalFilters = { month:'', asset:'', status:'' };
-const selectedTrades = new Set();
 let calendarDate = new Date();
 let calendarMode = 'R';
 const expandedTrades = new Set();
@@ -1590,7 +1304,7 @@ function navigate(page, el){
   pageEl.classList.add('active');
   if(el) el.classList.add('active');
   DB.set('sj_lastpage', page);
-  if(page === 'journal'){ journalDisplayCount = 50; collectJournalFilters(); }
+  if(page === 'journal') journalDisplayCount = 50;
   renderPage(page);
 }
 
@@ -3055,54 +2769,6 @@ function renderLossStreakAlert(tradeList){
 // ===========================
 // JOURNAL
 // ===========================
-function collectJournalFilters(){
-  journalFilters = {
-    month:  document.getElementById('jf-month')?.value  || '',
-    asset:  document.getElementById('jf-asset')?.value  || '',
-    status: document.getElementById('jf-status')?.value || ''
-  };
-}
-
-function getFilteredJournalTrades(){
-  return trades.filter(t => {
-    const date = t.date || '';
-    if(journalFilters.month && date.substring(0,7) !== journalFilters.month) return false;
-    if(journalFilters.asset && t.asset !== journalFilters.asset) return false;
-    if(journalFilters.status){
-      const s = journalFilters.status;
-      if(s === 'Aberto' && t.result) return false;
-      if(s === 'Encerrado' && !t.result) return false;
-      if(s === 'Win' && t.result !== 'Win') return false;
-      if(s === 'Loss' && t.result !== 'Loss') return false;
-      if(s === 'BE' && t.result !== 'BE') return false;
-    }
-    return true;
-  });
-}
-
-function applyJournalFilters(){
-  collectJournalFilters();
-  journalDisplayCount = 50;
-  renderJournal();
-}
-
-function resetJournalFilters(){
-  ['jf-month','jf-asset','jf-status'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.value = '';
-  });
-  collectJournalFilters();
-  journalDisplayCount = 50;
-  renderJournal();
-}
-
-function updateJournalFilterStatus(filtered){
-  const el = document.getElementById('journalFilterStatus');
-  if(!el) return;
-  const active = Object.values(journalFilters).filter(Boolean).length;
-  el.textContent = active ? filtered.length + ' de ' + trades.length + ' trades' : 'Todos os trades';
-}
-
-  
 function setJournalSort(column){
   if(journalSort.column === column){
     journalSort.direction = journalSort.direction === 'asc' ? 'desc' : 'asc';
@@ -3151,30 +2817,19 @@ let journalDisplayCount = 50;
 
 function renderJournal(){
   const tbody = document.getElementById('journalBody');
-  const filteredAll = getFilteredJournalTrades();
-  updateJournalFilterStatus(filteredAll);
   if(!trades.length){
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:50px;color:var(--muted)">Nenhuma operação ainda. Clique em "+ Nova Operação".</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:50px;color:var(--muted)">Nenhuma operação ainda. Clique em "+ Nova Operação".</td></tr>';
     updateSortArrows();
-    updateSelectAllCheckbox();
-    updateSelectionUI();
     return;
   }
-  if(!filteredAll.length){
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:50px;color:var(--muted)">Nenhuma operação corresponde aos filtros.</td></tr>';
-    updateSortArrows();
-    updateSelectAllCheckbox();
-    updateSelectionUI();
-    return;
-  }
-  const sortedTrades = sortTradesForJournal(filteredAll);
+  const sortedTrades = sortTradesForJournal(trades);
   const visible = sortedTrades.slice(0, journalDisplayCount);
   tbody.innerHTML = visible.map(t => {
     const expanded = expandedTrades.has(String(t.id)) ? 'table-row' : 'none';
 
     return tradeRow(t,true) +
       '<tr id="expand-'+esc(t.id)+'" style="display:'+expanded+'">'+
-        '<td colspan="10" style="padding:0">'+
+        '<td colspan="9" style="padding:0">'+
           '<div class="trade-expand open" id="expand-inner-'+esc(t.id)+'">'+
             '<div><div class="expand-section"><h4>Execução</h4>'+
               '<div class="expand-row"><span class="k">Entry</span><span class="v">'+(esc(t.entry)||'—')+'</span></div>'+
@@ -3217,11 +2872,9 @@ function renderJournal(){
         '</td>'+
       '</tr>';
   }).join('') + (sortedTrades.length > journalDisplayCount
-    ? '<tr><td colspan="10" style="text-align:center;padding:20px"><button class="btn btn-ghost btn-sm" onclick="loadMoreJournal()">Carregar mais ('+(sortedTrades.length - journalDisplayCount)+' restantes)</button></td></tr>'
+    ? '<tr><td colspan="9" style="text-align:center;padding:20px"><button class="btn btn-ghost btn-sm" onclick="loadMoreJournal()">Carregar mais ('+(sortedTrades.length - journalDisplayCount)+' restantes)</button></td></tr>'
     : '');
   updateSortArrows();
-  updateSelectionUI();
-  updateSelectAllCheckbox();
   // Carrega imagens dos trades já expandidos
   document.querySelectorAll('.expand-imgs[data-loaded="0"]').forEach(el => {
     const tr = el.closest('tr');
@@ -3232,67 +2885,6 @@ function renderJournal(){
 function loadMoreJournal(){
   journalDisplayCount += 50;
   renderJournal();
-}
-
-function toggleSelectTrade(id, checked){
-  if(checked) selectedTrades.add(String(id));
-  else selectedTrades.delete(String(id));
-  updateSelectionUI();
-  updateSelectAllCheckbox();
-}
-
-function toggleSelectAll(checked){
-  const visible = sortTradesForJournal(getFilteredJournalTrades()).slice(0, journalDisplayCount);
-  visible.forEach(t => {
-    if(checked) selectedTrades.add(String(t.id));
-    else selectedTrades.delete(String(t.id));
-  });
-  renderJournal();
-}
-
-function clearSelection(){
-  selectedTrades.clear();
-  renderJournal();
-}
-
-function updateSelectionUI(){
-  const bar = document.getElementById('journalSelectionBar');
-  const count = document.getElementById('journalSelectionCount');
-  if(!bar) return;
-  if(selectedTrades.size > 0){
-    bar.style.display = 'flex';
-    if(count) count.textContent = selectedTrades.size;
-  } else {
-    bar.style.display = 'none';
-  }
-}
-
-function updateSelectAllCheckbox(){
-  const cb = document.getElementById('journalSelectAll');
-  if(!cb) return;
-  const visible = sortTradesForJournal(getFilteredJournalTrades()).slice(0, journalDisplayCount);
-  if(!visible.length){ cb.checked = false; cb.indeterminate = false; return; }
-  const selectedCount = visible.filter(t => selectedTrades.has(String(t.id))).length;
-  cb.checked = selectedCount === visible.length;
-  cb.indeterminate = selectedCount > 0 && selectedCount < visible.length;
-}
-
-async function deleteSelectedTrades(){
-  const count = selectedTrades.size;
-  if(!count) return;
-  if(!confirm('Excluir ' + count + ' operação(ões) permanentemente?')) return;
-  const ids = Array.from(selectedTrades);
-  for(const id of ids){
-    try { await ScreenshotDB.deleteForTrade(String(id)); } catch(e){}
-    syncToSheet('deleteTrade', { id });
-  }
-  trades = trades.filter(t => !selectedTrades.has(String(t.id)));
-  selectedTrades.clear();
-  save();
-  renderJournal();
-  renderDashboard();
-  updateSelectionUI();
-  showToast(count + ' operação(ões) excluída(s).');
 }
 
 function fixDriveUrl(url){
@@ -3347,9 +2939,7 @@ function tradeRow(t, expandable){
   const status = t.result ? 'Encerrado' : 'Aberto';
   const statusColor = t.result ? 'var(--muted)' : 'var(--accent)';
   if(expandable){
-    const isChecked = selectedTrades.has(String(t.id));
     return '<tr onclick="toggleExpand(\''+esc(t.id)+'\')" style="cursor:pointer">'+
-      '<td style="width:36px;padding-right:0" onclick="event.stopPropagation()"><input type="checkbox" '+(isChecked?'checked':'')+' onclick="event.stopPropagation();toggleSelectTrade(\''+esc(t.id)+'\',this.checked)" style="cursor:pointer;accent-color:var(--accent2)"></td>'+
       '<td>'+(esc(t.date)||'—')+'</td>'+
       '<td style="font-weight:600;font-family:\'DM Mono\'">'+(esc(t.asset)||'—')+'</td>'+
       '<td>'+dirBadge+'</td><td>'+setupBadge+'</td><td>'+resultBadge+'</td>'+
@@ -3835,12 +3425,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.classList.add('collapsed');
   }
 
-  // Inicializa selects de filtro do Journal
-  ['jf-month','jf-asset','jf-status'].forEach(id => {
-    const el = document.getElementById(id);
-    if(el && el.value) { /* nada */ }
-  });
-
   const lastPage = DB.get('sj_lastpage', 'dashboard');
   const btn = document.querySelector('.nav-item[data-page="'+lastPage+'"]');
   if(btn && lastPage !== 'dashboard'){
@@ -3912,9 +3496,7 @@ window.addEventListener('resize', () => {
   <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-navigator.serviceWorker.register('./sw.js', {
-  updateViaCache: 'none'
-})
+    navigator.serviceWorker.register('./sw.js')
       .then(() => {
         console.log('Dileme PWA ativo');
       })
