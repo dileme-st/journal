@@ -93,6 +93,61 @@ nav{flex:1;padding:8px 8px;overflow-y:auto;overflow-x:hidden}
   50%{opacity:1}
 }
 
+ .sync-popover{
+  position:absolute;
+  left:calc(100% + 10px);
+  bottom:10px;
+  width:230px;
+  padding:14px;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:10px;
+  box-shadow:0 12px 30px rgba(0,0,0,.35);
+  display:none;
+  z-index:1000;
+}
+
+.sync-popover.show{
+  display:block;
+}
+
+.sync-popover-title{
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.08em;
+  color:var(--muted);
+  margin-bottom:12px;
+}
+
+.sync-popover-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:11px;
+  color:var(--text);
+  padding:7px 0;
+}
+
+.sync-popover-dot{
+  width:7px;
+  height:7px;
+  min-width:7px;
+  border-radius:50%;
+  background:var(--green);
+}
+
+.sync-popover-backup{
+  justify-content:space-between;
+  border-top:1px solid var(--border);
+  margin-top:5px;
+  padding-top:10px;
+  color:var(--muted);
+}
+
+#syncPopoverBackup{
+  color:var(--text);
+} 
+
 @media(max-width:760px){
   .sync-status{
     justify-content:center;
@@ -503,6 +558,24 @@ textarea.form-control{resize:vertical;min-height:90px}
   <div id="syncStatus" class="sync-status">
   <span class="sync-dot"></span>
   <span class="sync-text">Local salvo</span>
+</div>
+  <div id="syncPopover" class="sync-popover">
+  <div class="sync-popover-title">STATUS DOS DADOS</div>
+
+  <div class="sync-popover-row">
+    <span class="sync-popover-dot"></span>
+    <span id="syncPopoverLocal">Salvo neste dispositivo</span>
+  </div>
+
+  <div class="sync-popover-row">
+    <span class="sync-popover-dot"></span>
+    <span id="syncPopoverCloud">Sincronização pendente</span>
+  </div>
+
+  <div class="sync-popover-row sync-popover-backup">
+    <span>Backup</span>
+    <span id="syncPopoverBackup">Não realizado</span>
+  </div>
 </div>
 </aside>
 
@@ -1097,9 +1170,33 @@ function updateSyncStatus(status, text){
   if(label) label.textContent = text;
 }
 
+function toggleSyncPopover(){
+  const popover = document.getElementById('syncPopover');
+  if(!popover) return;
+
+  popover.classList.toggle('show');
+}
+
 function markLocalSaved(){
   updateSyncStatus('online', 'Local salvo');
 }
+
+const syncStatusEl = document.getElementById('syncStatus');
+
+if(syncStatusEl){
+  syncStatusEl.addEventListener('click', toggleSyncPopover);
+}
+
+document.addEventListener('click', function(event){
+  const popover = document.getElementById('syncPopover');
+  const status = document.getElementById('syncStatus');
+
+  if(!popover || !status) return;
+
+  if(!popover.contains(event.target) && !status.contains(event.target)){
+    popover.classList.remove('show');
+  }
+});
 
 function markSyncing(){
   updateSyncStatus('syncing', 'Sincronizando...');
