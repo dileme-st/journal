@@ -1044,6 +1044,98 @@ const syncState = {
   lastSuccessAt: 0
 };
 
+// ---------- SYNC QUEUE (fila persistente de operações) ----------
+const SYNC_QUEUE_KEY = 'sj_sync_queue';
+
+function getSyncQueue(){
+  return DB.get(SYNC_QUEUE_KEY, []);
+}
+
+function saveSyncQueue(q){
+  DB.set(SYNC_QUEUE_KEY, q);
+}
+
+function enqueueSync(action, data){
+  const q = getSyncQueue();
+  const dataId = data && data.id ? String(data.id) : null;
+
+  if(dataId){
+    // Substitui qualquer ação anterior para o MESMO id
+    // (se criar+editar+excluir, a última vence)
+    const filtered = q.filter(item => !(item.data && String(item.data.id) === dataId));
+    filtered.push({ action, data, ts: Date.now() });
+    saveSyncQueue(filtered);
+  } else {
+    q.push({ action, data, ts: Date.now() });
+    saveSyncQueue(q);
+  }
+  updateSyncStatusUI();
+}
+
+let processingQueue = false;
+
+async function processSyncQueue(){
+  if(processingQueue) return;
+  if(!navigator.onLine) return;
+  const q = getSyncQueue();
+  if(!q.length) return;
+
+  processingQueue = true;
+  markSyncing();
+
+  const remaining = [];
+  for(const item of q){
+    try {
+      await fetch(SHEET_WEBHOOK_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: item.action, data: item.data })
+      });
+    } catch(e){
+      remaining.push(item);
+    }
+  }
+
+  saveSyncQueue(remaining);
+  processingQueue = false;
+
+  if(remaining.length === 0){
+    markSynced();
+  } else {
+    markSyncError({ message: remaining.length + ' item(s) não enviados' });
+  }
+}
+
+async function reconcileWithSheet(){
+  if(!SHEET_WEBHOOK_URL || !navigator.onLine) return;
+  try {
+    const res = await fetch(SHEET_WEBHOOK_URL + '?action=getAll');
+    const data = await res.json();
+    if(data.status !== 'success' || !Array.isArray(data.trades)) return;
+
+    const localIds = new Set(trades.map(t => String(t.id)));
+    const remoteTrades = data.trades;
+    const toDelete = remoteTrades
+      .map(t => String(t.id))
+      .filter(id => !localIds.has(id));
+
+    if(toDelete.length){
+      for(const id of toDelete){
+        await fetch(SHEET_WEBHOOK_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'deleteTrade', data: { id } })
+        });
+      }
+      showToast('Reconciliado: ' + toDelete.length + ' trade(s) removido(s) da planilha.');
+    }
+  } catch(e){
+    console.warn('Reconciliação falhou:', e);
+  }
+}
+  
 function setSyncStatus(status){
   if(syncState.status === status) return;
   syncState.status = status;
@@ -1057,15 +1149,25 @@ function updateSyncStatusUI(){
 
   wrap.classList.remove('syncing','synced','pending','error');
 
-  let text = 'Local salvo';
-  let cls = '';
+  const queueSize = getSyncQueue().length;
+  let text, cls;
 
-  switch(syncState.status){
-    case 'syncing': text = 'Sincronizando...';        cls = 'syncing'; break;
-    case 'synced':  text = 'Sincronização enviada';   cls = 'synced';  break;
-    case 'pending': text = 'Sincronização pendente';  cls = 'pending'; break;
-    case 'error':   text = 'Falha na sincronização';  cls = 'error';   break;
-    default:        text = 'Local salvo';
+  // Prioridade: syncing > error recente > fila pendente > synced > local
+  if(syncState.status === 'syncing'){
+    text = 'Sincronizando...';
+    cls = 'syncing';
+  } else if(syncState.status === 'error'){
+    text = 'Falha na sincronização';
+    cls = 'error';
+  } else if(queueSize > 0){
+    text = 'Sincronização pendente (' + queueSize + ')';
+    cls = 'pending';
+  } else if(syncState.status === 'synced'){
+    text = 'Sincronização enviada';
+    cls = 'synced';
+  } else {
+    text = navigator.onLine ? 'Local salvo' : 'Sincronização pendente';
+    cls = navigator.onLine ? '' : 'pending';
   }
 
   if(cls) wrap.classList.add(cls);
@@ -1108,7 +1210,13 @@ function markSyncError(err){
 
 async function syncToSheet(action, data){
   if(!SHEET_WEBHOOK_URL) return;
-  if(!navigator.onLine){ setSyncStatus('pending'); return; }
+
+  // Offline: guarda na fila
+  if(!navigator.onLine){
+    enqueueSync(action, data);
+    setSyncStatus('pending');
+    return;
+  }
 
   markSyncing();
   try {
@@ -1121,6 +1229,7 @@ async function syncToSheet(action, data){
     markSynced();
   } catch(e){
     console.warn('Sync failed:', action, e);
+    enqueueSync(action, data);
     markSyncError(e);
   }
 }
@@ -1143,13 +1252,24 @@ async function uploadScreenshotToSheet(tradeId, slot, dataUrl){
   
 async function syncAllToSheet(){
   if(!SHEET_WEBHOOK_URL){ showToast('Configure a URL do Apps Script primeiro.'); return; }
+  if(!navigator.onLine){ showToast('Sem conexão. Tente novamente quando estiver online.'); return; }
+
   showToast('Enviando para a planilha...');
+
+  // 1) Processa a fila de operações pendentes primeiro
+  await processSyncQueue();
+
+  // 2) Envia o estado atual completo
   let count = 0;
   for(const t of trades)    { await syncToSheet('saveTrade',  t); count++; }
   for(const w of watchlist) { await syncToSheet('saveWatch',  w); count++; }
   for(const r of reviews)   { await syncToSheet('saveReview', r); count++; }
   await syncToSheet('saveSystem',   systemData);
   await syncToSheet('saveSettings', settings);
+
+  // 3) Reconciliação: apaga da planilha o que não existe mais localmente
+  await reconcileWithSheet();
+
   showToast('Enviado: '+count+' registros.');
 }
 
@@ -3759,12 +3879,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ---------- ONLINE / OFFLINE ----------
 window.addEventListener('online', () => {
-  if(syncState.status === 'pending') setSyncStatus('local');
   updateSyncStatusUI();
+  // Processa a fila automaticamente ao voltar online
+  setTimeout(() => processSyncQueue(), 500);
 });
 window.addEventListener('offline', () => {
-  setSyncStatus('pending');
-});
+  updateSyncStatusUI();
+});  
   
 let resizeTimer;
 window.addEventListener('resize', () => {
