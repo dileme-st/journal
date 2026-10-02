@@ -3662,7 +3662,9 @@ window.addEventListener('resize', () => {
   <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
+navigator.serviceWorker.register('./sw.js', {
+  updateViaCache: 'none'
+})
       .then(() => {
         console.log('Dileme PWA ativo');
       })
