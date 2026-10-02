@@ -3659,17 +3659,79 @@ window.addEventListener('resize', () => {
   }, 120);
 });
 </script>
-  <script>
+ <script>
+// ============================================================
+// PWA — Registro + Auto-update
+// ============================================================
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(() => {
-        console.log('Dileme PWA ativo');
-      })
-      .catch(error => {
-        console.error('Erro ao registrar PWA:', error);
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('./sw.js', {
+        updateViaCache: 'none' // Ignora HTTP cache ao buscar o sw.js
       });
+
+      // Força verificação de atualização a cada 30 minutos
+      setInterval(() => registration.update().catch(() => {}), 30 * 60 * 1000);
+
+      // Verifica quando o app volta ao foco (você abre o celular depois de horas)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          registration.update().catch(() => {});
+        }
+      });
+
+      // Detecta quando uma nova versão do SW foi instalada
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // Há uma nova versão pronta
+            handleUpdateReady();
+          }
+        });
+      });
+
+      console.log('PWA registrado.');
+    } catch (error) {
+      console.error('Erro ao registrar PWA:', error);
+    }
   });
+
+  // Se o controlador do SW trocar (nova versão assumiu), recarrega a página
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return;
+    refreshing = true;
+    // Não recarrega se o usuário estiver com um painel aberto
+    const panelOpen = document.querySelector('.panel.open');
+    if (panelOpen) {
+      showUpdateToast();
+      return;
+    }
+    window.location.reload();
+  });
+}
+
+// Toast específico de atualização (recarrega quando clicado)
+function showUpdateToast() {
+  const el = document.createElement('div');
+  el.id = 'updateToast';
+  el.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--accent2);color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;z-index:9999;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.4);display:flex;align-items:center;gap:10px;animation:fadeIn .2s ease';
+  el.innerHTML = '<span>✨ Nova versão disponível</span><span style="font-weight:600;text-decoration:underline">Recarregar</span>';
+  el.onclick = () => window.location.reload();
+  document.body.appendChild(el);
+  // Some sozinho depois de 30s
+  setTimeout(() => el.remove(), 30000);
+}
+
+// Se a versão anterior foi carregada com painel aberto, avisa quando estiver pronto
+function handleUpdateReady() {
+  const panelOpen = document.querySelector('.panel.open');
+  if (panelOpen) {
+    showUpdateToast();
+  }
+  // Se não houver painel aberto, o controllerchange cuida do reload
 }
 </script>
 </body>
