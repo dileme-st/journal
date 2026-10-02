@@ -1,9 +1,12 @@
-const CACHE_NAME = 'dileme-v1';
+const CACHE_NAME = 'dileme-v2';
 
 const APP_SHELL = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  './logo.png',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -22,17 +25,57 @@ self.addEventListener('activate', event => {
           .filter(key => key !== CACHE_NAME)
           .map(key => caches.delete(key))
       )
-    )
+    ).then(() => self.clients.claim())
   );
-
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
+
+  // Navegação / index.html:
+  // tenta sempre buscar a versão mais recente.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const copy = response.clone();
+
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put('./index.html', copy);
+          });
+
+          return response;
+        })
+        .catch(() => {
+          return caches.match('./index.html');
+        })
+    );
+
+    return;
+  }
+
+  // Outros recursos:
+  // cache primeiro, rede como fallback.
   event.respondWith(
     caches.match(event.request)
       .then(cachedResponse => {
-        return cachedResponse || fetch(event.request);
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        return fetch(event.request).then(response => {
+
+          if (!response || response.status !== 200) {
+            return response;
+          }
+
+          const copy = response.clone();
+
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, copy);
+          });
+
+          return response;
+        });
       })
   );
 });
