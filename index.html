@@ -48,6 +48,61 @@ nav{flex:1;padding:8px 8px;overflow-y:auto;overflow-x:hidden}
 .sidebar-bottom{padding:12px 8px;border-top:1px solid var(--border)}
 .account-name{font-size:11px;color:var(--muted);padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #sidebar.collapsed .account-name{display:none}
+.sync-status{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 10px;
+  font-size:10px;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+}
+
+.sync-dot{
+  width:7px;
+  height:7px;
+  min-width:7px;
+  border-radius:50%;
+  background:var(--muted);
+}
+
+.sync-status.online .sync-dot{
+  background:var(--green);
+}
+
+.sync-status.syncing .sync-dot{
+  background:var(--yellow);
+  animation:syncPulse 1s infinite;
+}
+
+.sync-status.pending .sync-dot{
+  background:var(--yellow);
+}
+
+.sync-status.error .sync-dot{
+  background:var(--red);
+}
+
+.sync-status.offline .sync-dot{
+  background:var(--muted);
+}
+
+@keyframes syncPulse{
+  0%,100%{opacity:.4}
+  50%{opacity:1}
+}
+
+@media(max-width:760px){
+  .sync-status{
+    justify-content:center;
+    padding:7px 0;
+  }
+
+  .sync-text{
+    display:none;
+  }
+}
 
 /* MAIN */
 #main{margin-left:var(--sidebar);flex:1;height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease;-webkit-overflow-scrolling:touch}
@@ -433,6 +488,10 @@ textarea.form-control{resize:vertical;min-height:90px}
   <div class="sidebar-bottom">
     <div class="account-name" id="accountName">Minha conta</div>
   </div>
+  <div id="syncStatus" class="sync-status">
+  <span class="sync-dot"></span>
+  <span class="sync-text">Local salvo</span>
+</div>
 </aside>
 
 <main id="main">
@@ -1008,19 +1067,101 @@ const ASSET_MULTIPLIER_DEFAULTS = {
 // ===========================
 const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxotTubk-Tsg_XwicQKEN6mdH7PwfgJeJKUnqAEncJvqflcvBf9t2JYzaz-CYOOskXh/exec';
 
+let syncState = {
+  status: 'local',
+  lastSync: null
+};
+
+function updateSyncStatus(status, text){
+
+  syncState.status = status;
+
+  const el = document.getElementById('syncStatus');
+  if(!el) return;
+
+  el.className = 'sync-status ' + status;
+
+  const label = el.querySelector('.sync-text');
+  if(label) label.textContent = text;
+}
+
+function markLocalSaved(){
+  updateSyncStatus('online', 'Local salvo');
+}
+
+function markSyncing(){
+  updateSyncStatus('syncing', 'Sincronizando...');
+}
+
+function markSyncPending(){
+  updateSyncStatus('pending', 'Sincronização pendente');
+}
+
+function markSyncError(){
+  updateSyncStatus('error', 'Falha na sincronização');
+}
+
+function markSyncSent(){
+  syncState.lastSync = new Date().toISOString();
+  updateSyncStatus('online', 'Sincronização enviada');
+}
+  
 async function syncToSheet(action, data){
-  if(!SHEET_WEBHOOK_URL) return;
+
+  if(!SHEET_WEBHOOK_URL){
+    markSyncPending();
+    return false;
+  }
+
+  if(!navigator.onLine){
+    markSyncPending();
+    return false;
+  }
+
+  markSyncing();
+
   try {
+
     await fetch(SHEET_WEBHOOK_URL, {
       method: 'POST',
       mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, data })
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({
+        action,
+        data
+      })
     });
+
+    // Como o POST usa no-cors,
+    // não podemos confirmar a resposta do servidor.
+    // Portanto o texto correto é "Sincronização enviada".
+    markSyncSent();
+
+    return true;
+
   } catch(e){
+
     console.warn('Sync failed:', action, e);
+
+    markSyncError();
+
+    return false;
   }
 }
+
+window.addEventListener('online', () => {
+  markLocalSaved();
+
+  setTimeout(() => {
+    syncAllToSheet();
+  }, 500);
+});
+
+window.addEventListener('offline', () => {
+  markSyncPending();
+});
 
 async function uploadScreenshotToSheet(tradeId, slot, dataUrl){
   if(!SHEET_WEBHOOK_URL) return null;
