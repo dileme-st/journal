@@ -75,7 +75,7 @@ nav{flex:1;padding:8px 8px;overflow-y:auto;overflow-x:hidden}
 #main{margin-left:var(--sidebar);flex:1;height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease;-webkit-overflow-scrolling:touch;padding-top:44px}
 body.collapsed #main{margin-left:56px}
 
-/* TOP BAR — conta ativa sempre visível */
+/* TOP BAR */
 .top-bar{position:fixed;top:0;left:var(--sidebar);right:0;z-index:90;background:rgba(15,17,21,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:8px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;transition:left .25s ease}
 body.collapsed .top-bar{left:56px}
 .top-bar-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
@@ -94,7 +94,6 @@ body.collapsed .top-bar{left:56px}
 .page-header{margin-bottom:28px}
 .page-header h1{font-size:20px;font-weight:600;letter-spacing:-.2px}
 .page-header p{color:var(--muted);font-size:13px;margin-top:3px}
-
 
 /* STATS */
 .stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px}
@@ -380,39 +379,13 @@ textarea.form-control{resize:vertical;min-height:90px}
 .text-muted{color:var(--muted)}.text-sm{font-size:12px}.text-mono{font-family:'DM Mono',monospace}
 @media (max-width: 900px) and (orientation: landscape){
   :root{--sidebar:56px}
-
-  #sidebar{
-    width:56px;
-    min-width:56px;
-  }
-
-  #main{
-    margin-left:56px;
-  }
-
-  .logo-text,
-  .nav-label,
-  .account-name{
-    display:none;
-  }
-
-  .sidebar-top{
-    justify-content:center;
-    padding:12px 8px;
-  }
-
-  .page{
-    padding:16px;
-  }
-
-  .panel-lg{
-    width:100vw;
-    max-width:100vw;
-  }
-
-  .panel-body{
-    padding:16px;
-  }
+  #sidebar{width:56px;min-width:56px}
+  #main{margin-left:56px}
+  .logo-text,.nav-label,.account-name{display:none}
+  .sidebar-top{justify-content:center;padding:12px 8px}
+  .page{padding:16px}
+  .panel-lg{width:100vw;max-width:100vw}
+  .panel-body{padding:16px}
 }
 @media(max-width:760px){
   :root{--sidebar:56px}
@@ -1100,7 +1073,7 @@ const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxotTubk-Tsg_
 
 // ---------- SYNC STATUS ----------
 const syncState = {
-  status: 'local',           // 'local' | 'syncing' | 'synced' | 'pending' | 'error'
+  status: 'local',
   inFlight: 0,
   successTimer: null,
   errorTimer: null,
@@ -1108,7 +1081,7 @@ const syncState = {
   lastSuccessAt: 0
 };
 
-// ---------- SYNC QUEUE (fila persistente de operações) ----------
+// ---------- SYNC QUEUE ----------
 const SYNC_QUEUE_KEY = 'sj_sync_queue';
 
 function getSyncQueue(){
@@ -1124,8 +1097,6 @@ function enqueueSync(action, data){
   const dataId = data && data.id ? String(data.id) : null;
 
   if(dataId){
-    // Substitui qualquer ação anterior para o MESMO id
-    // (se criar+editar+excluir, a última vence)
     const filtered = q.filter(item => !(item.data && String(item.data.id) === dataId));
     filtered.push({ action, data, ts: Date.now() });
     saveSyncQueue(filtered);
@@ -1199,7 +1170,7 @@ async function reconcileWithSheet(){
     console.warn('Reconciliação falhou:', e);
   }
 }
-  
+
 function setSyncStatus(status){
   if(syncState.status === status) return;
   syncState.status = status;
@@ -1216,7 +1187,6 @@ function updateSyncStatusUI(){
   const queueSize = getSyncQueue().length;
   let text, cls;
 
-  // Prioridade: syncing > error recente > fila pendente > synced > local
   if(syncState.status === 'syncing'){
     text = 'Sincronizando...';
     cls = 'syncing';
@@ -1275,7 +1245,6 @@ function markSyncError(err){
 async function syncToSheet(action, data){
   if(!SHEET_WEBHOOK_URL) return;
 
-  // Offline: guarda na fila
   if(!navigator.onLine){
     enqueueSync(action, data);
     setSyncStatus('pending');
@@ -1313,17 +1282,15 @@ async function uploadScreenshotToSheet(tradeId, slot, dataUrl){
     return null;
   }
 }
-  
+
 async function syncAllToSheet(){
   if(!SHEET_WEBHOOK_URL){ showToast('Configure a URL do Apps Script primeiro.'); return; }
   if(!navigator.onLine){ showToast('Sem conexão. Tente novamente quando estiver online.'); return; }
 
   showToast('Enviando para a planilha...');
 
-  // 1) Processa a fila de operações pendentes primeiro
   await processSyncQueue();
 
-  // 2) Envia o estado atual completo
   let count = 0;
   for(const t of trades)    { await syncToSheet('saveTrade',  t); count++; }
   for(const w of watchlist) { await syncToSheet('saveWatch',  w); count++; }
@@ -1331,7 +1298,6 @@ async function syncAllToSheet(){
   await syncToSheet('saveSystem',   systemData);
   await syncToSheet('saveSettings', settings);
 
-  // 3) Reconciliação: apaga da planilha o que não existe mais localmente
   await reconcileWithSheet();
 
   showToast('Enviado: '+count+' registros.');
@@ -1356,10 +1322,8 @@ async function loadFromSheet(silent){
     if(data.system && Object.keys(data.system).length) systemData = data.system;
     if(data.settings){
       const incoming = data.settings;
-      // Contas vêm do Sheets
       if(Array.isArray(incoming.accounts) && incoming.accounts.length){
         accounts = incoming.accounts;
-        // Se a conta ativa local não existe mais, escolhe a primeira
         if(!accounts.find(a => a.id === activeAccountId)){
           activeAccountId = accounts[0].id;
           DB.set('sj_active_account', activeAccountId);
@@ -1373,11 +1337,9 @@ async function loadFromSheet(silent){
     save();
     normalizeAllDates();
     ensureTradeAccounts();
-    const acc = document.getElementById('accountName');
-    if(acc) acc.textContent = settings.accountName || 'Minha conta';
-      // Inicializa status de sincronização
-  updateSyncStatusUI();
-  if(!navigator.onLine) setSyncStatus('pending');
+    renderActiveAccountUI();
+    updateSyncStatusUI();
+    if(!navigator.onLine) setSyncStatus('pending');
     renderDashboard();
     if(!silent) showToast('Dados carregados da planilha!');
   } catch(e){
@@ -1393,7 +1355,6 @@ function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// Normaliza datas vindas do Sheets (2026-09-29T03:00:00.000Z → 2026-09-29)
 function normalizeDate(v){
   if(!v) return '';
   const s = String(v);
@@ -1495,6 +1456,13 @@ function getAssetMultiplier(asset){
 // ===========================
 // STORAGE
 // ===========================
+const DB = {
+  get(key,def){ try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; } },
+  set(key,val){
+    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
+    catch(e){ console.error('Storage save failed:', key, e); showToast('⚠️ Armazenamento cheio. Exporte um backup.'); return false; }
+  }
+};
 
 // ===========================
 // SCREENSHOT STORAGE (IndexedDB)
@@ -1566,7 +1534,6 @@ async function migrateScreenshotsToIndexedDB(){
           try { await ScreenshotDB.put(t.id + ':' + slot, t.screenshots[i]); migrated++; } catch(e){}
         }
       }
-      // Legacy: img_htf/img_entry/img_exit
     } else {
       const legacy = [t.img_htf, t.img_entry, t.img_exit];
       for(let i = 0; i < legacy.length; i++){
@@ -1588,15 +1555,10 @@ async function migrateScreenshotsToIndexedDB(){
     console.log('Migrated ' + migrated + ' screenshots to IndexedDB');
   }
 }
-  
-  const DB = {
-  get(key,def){ try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; } },
-  set(key,val){
-    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
-    catch(e){ console.error('Storage save failed:', key, e); showToast('⚠️ Armazenamento cheio. Exporte um backup.'); return false; }
-  }
-};
 
+// ===========================
+// STATE
+// ===========================
 let trades = DB.get('sj_trades', []);
 let watchlist = DB.get('sj_watchlist', []);
 let reviews = DB.get('sj_reviews', []);
@@ -1604,6 +1566,19 @@ let systemData = DB.get('sj_system', getDefaultSystem());
 let settings = DB.get('sj_settings', { accountName:'Minha conta', accountBalance: 10000 });
 let accounts = DB.get('sj_accounts', []);
 let activeAccountId = DB.get('sj_active_account', null);
+
+let editingTrade = null;
+let editingWatch = null;
+let currentScreenshots = [];
+let lastFocusedSlot = null;
+let dashboardFilters = { month:'', from:'', to:'', asset:'', setup:'', result:'' };
+let journalSort = { column: 'date', direction: 'desc' };
+let journalFilters = { month:'', asset:'', status:'' };
+const selectedTrades = new Set();
+let calendarDate = new Date();
+let calendarMode = 'R';
+let journalDisplayCount = 50;
+const expandedTrades = new Set();
 
 function getActiveAccount(){
   return accounts.find(a => a.id === activeAccountId) || accounts[0] || null;
@@ -1639,7 +1614,6 @@ function migrateToAccounts(){
     DB.set('sj_active_account', activeAccountId);
     changed = true;
   }
-  // Atribui accountId a trades sem conta
   trades.forEach(t => {
     if(!t.accountId){
       t.accountId = activeAccountId;
@@ -1659,27 +1633,16 @@ function ensureTradeAccounts(){
   });
   if(changed) save();
 }
-let editingTrade = null;
-let editingWatch = null;
-let currentScreenshots = [];
-let lastFocusedSlot = null;
-let dashboardFilters = { month:'', from:'', to:'', asset:'', setup:'', result:'' };
-let journalSort = { column: 'date', direction: 'desc' };
-let journalFilters = { month:'', asset:'', status:'' };
-const selectedTrades = new Set();
-let calendarDate = new Date();
-let calendarMode = 'R';
-const expandedTrades = new Set();
 
 function save(){
   DB.set('sj_trades', trades);
   DB.set('sj_watchlist', watchlist);
   DB.set('sj_reviews', reviews);
   DB.set('sj_system', systemData);
-  settings.accounts = accounts;   // viaja junto com o settings
+  settings.accounts = accounts;
   DB.set('sj_settings', settings);
-  DB.set('sj_accounts', accounts);         // retrocompat
-  DB.set('sj_active_account', activeAccountId); // local por dispositivo
+  DB.set('sj_accounts', accounts);
+  DB.set('sj_active_account', activeAccountId);
 }
 
 function getDefaultSystem(){
@@ -1789,8 +1752,6 @@ function selectRadio(btn){
   const group = btn.closest('.radio-group');
   const hidden = document.getElementById(field);
 
-  // Toggle: clicar no botão já selecionado desmarca (só para o Resultado,
-  // permitindo deixar o trade como "Aberto")
   const isAlreadySelected = btn.classList.contains('selected');
   if(field === 't-result' && isAlreadySelected){
     btn.classList.remove('selected');
@@ -1852,7 +1813,6 @@ function recalcRAndPnl(){
   const hasPrices = !isNaN(entry) && !isNaN(sl) && entry !== sl && !!dir;
   const riskPrice = hasPrices ? Math.abs(entry - sl) : 0;
 
-  // === MODO PARCIAIS ===
   if(usePartials()){
     let totalR = 0;
     let totalPct = 0;
@@ -1879,7 +1839,6 @@ function recalcRAndPnl(){
       }
     });
 
-    // R do restante (100% - totalPct)
     const restPct = Math.max(0, 100 - totalPct);
     let restR = null;
     if(!isNaN(exit) && hasPrices){
@@ -1932,7 +1891,6 @@ function recalcRAndPnl(){
     return;
   }
 
-  // === MODO SIMPLES (sem parciais) ===
   let rValue = null;
   let mode = '';
 
@@ -1980,6 +1938,7 @@ function recalcRAndPnl(){
     pnlField.value = '';
   }
 }
+
 function recalcSizeFromRisk(){
   const $ = id => document.getElementById(id);
   const entry      = parseFloat($('t-entry').value);
@@ -2049,7 +2008,7 @@ function recalcRR(){
   const rr = rewardPrice / riskPrice;
   if(isFinite(rr) && rr > 0) rrEl.value = rr.toFixed(2);
 }
-  
+
 function syncMultiplierToAsset(){
   const asset = document.getElementById('t-asset').value;
   const field = document.getElementById('t-multiplier');
@@ -2082,7 +2041,7 @@ function calcPartialR(price){
   const move = dir === 'Long' ? (price - entry) : (entry - price);
   return move / riskPrice;
 }
-  
+
 // ===========================
 // SCREENSHOTS
 // ===========================
@@ -2244,7 +2203,6 @@ async function populateTradeForm(t){
     setVal('t-p'+n+'-pct', p ? p.pct : '');
   });
 
-  // Carrega screenshots do IndexedDB
   currentScreenshots = [];
   if(t.id){
     const shots = await ScreenshotDB.listForTrade(String(t.id));
@@ -2362,7 +2320,6 @@ async function saveTrade(){
       createdAt: new Date().toISOString()
     };
 
-    // Salva screenshots no IndexedDB
     for(const slot of SHOT_SLOTS){
       const data = currentScreenshots[SHOT_INDEX[slot]];
       const key = tradeId + ':' + slot;
@@ -2383,7 +2340,6 @@ async function saveTrade(){
     save();
     syncToSheet('saveTrade', trade);
 
-    // Upload das screenshots para o Drive (assíncrono, não bloqueia)
     if(SHEET_WEBHOOK_URL && currentScreenshots.some(Boolean)){
       (async () => {
         try {
@@ -2621,7 +2577,6 @@ function renderDashboard(){
   renderConfluencePerf(filtered);
   renderEmotionalPerf(filtered);
   renderHeatmap(filtered);
-  // Loss streak considera apenas a conta ativa
   renderLossStreakAlert(trades.filter(t => !activeAccountId || !t.accountId || t.accountId === activeAccountId));
 }
 
@@ -3102,7 +3057,6 @@ function renderHeatmap(tradeList){
     return;
   }
 
-  // Buckets de 3 horas: 0-3, 3-6, 6-9, 9-12, 12-15, 15-18, 18-21, 21-24
   const hourBuckets = ['00–03','03–06','06–09','09–12','12–15','15–18','18–21','21–24'];
   const days = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 
@@ -3112,7 +3066,6 @@ function renderHeatmap(tradeList){
     return (d.getDay() + 6) % 7;
   };
 
-  // matriz[day][bucket] = { sumR, count }
   const matrix = Array.from({length:7}, () => Array.from({length:8}, () => ({ sumR:0, count:0 })));
   closed.forEach(t => {
     const h = parseInt(t.entryHour);
@@ -3123,7 +3076,6 @@ function renderHeatmap(tradeList){
     matrix[di][bi].count += 1;
   });
 
-  // escala para as classes de cor
   const allVals = matrix.flat().filter(c => c.count > 0).map(c => c.sumR);
   const maxAbs = Math.max(...allVals.map(Math.abs), 0.5);
 
@@ -3168,7 +3120,7 @@ function renderLossStreakAlert(tradeList){
     el.classList.add('hidden');
   }
 }
-  
+
 // ===========================
 // JOURNAL
 // ===========================
@@ -3220,7 +3172,6 @@ function updateJournalFilterStatus(filtered){
   el.textContent = active ? filtered.length + ' de ' + trades.length + ' trades' : 'Todos os trades';
 }
 
-  
 function setJournalSort(column){
   if(journalSort.column === column){
     journalSort.direction = journalSort.direction === 'asc' ? 'desc' : 'asc';
@@ -3264,8 +3215,6 @@ function updateSortArrows(){
     }
   });
 }
-
-let journalDisplayCount = 50;
 
 function renderJournal(){
   const tbody = document.getElementById('journalBody');
@@ -3327,7 +3276,8 @@ function renderJournal(){
               (t.lessons ? '<div style="margin-top:8px"><div style="font-size:11px;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Lições</div><div class="expand-note">'+esc(t.lessons)+'</div></div>' : '')+
             '</div>'+
             '<div class="expand-imgs" data-trade-id="'+esc(t.id)+'" data-loaded="0"></div>'+
-            '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+              '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTradePanel(\''+esc(t.id)+'\')">Editar</button>'+
+            '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
+              '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTradePanel(\''+esc(t.id)+'\')">Editar</button>'+
               '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();duplicateTrade(\''+esc(t.id)+'\')">Duplicar</button>'+
               '<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteTrade(\''+esc(t.id)+'\')">Excluir</button>'+
             '</div></div>'+
@@ -3340,7 +3290,6 @@ function renderJournal(){
   updateSortArrows();
   updateSelectionUI();
   updateSelectAllCheckbox();
-  // Carrega imagens dos trades já expandidos
   document.querySelectorAll('.expand-imgs[data-loaded="0"]').forEach(el => {
     const tr = el.closest('tr');
     if(tr && tr.style.display !== 'none') loadScreenshotsInto(el);
@@ -3415,7 +3364,6 @@ async function deleteSelectedTrades(){
 
 function fixDriveUrl(url){
   if(!url || typeof url !== 'string') return url;
-  // Extrai o FILE_ID de qualquer formato antigo do Drive
   const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if(m && m[1] && url.indexOf('lh3.googleusercontent.com') === -1){
     return 'https://lh3.googleusercontent.com/d/' + m[1];
@@ -3455,7 +3403,7 @@ function tradeRow(t, expandable){
     t.dir === 'Short' ? '<span class="badge badge-short">Short</span>' : '—';
   const setupBadge = t.setup === 'A+' ? '<span class="badge badge-aplus">A+</span>' :
     t.setup === 'Valid' ? '<span class="badge badge-valid">Válido</span>' : '—';
-   const hasResult = !!t.result;
+  const hasResult = !!t.result;
   const pnlVal = hasResult ? (parseFloat(t.pnl) || 0) : 0;
   const pnlStr = hasResult
     ? '<span style="color:'+(pnlVal>=0?'var(--green)':'var(--red)')+';font-family:\'DM Mono\',monospace">'+(pnlVal>=0?'+':'')+'$'+pnlVal.toFixed(2)+'</span>'
@@ -3497,7 +3445,7 @@ function calcPartialRFromTrade(t, price){
   const move = t.dir === 'Long' ? (price - entry) : (entry - price);
   return move / riskPrice;
 }
-  
+
 function toggleExpand(id){
   const row = document.getElementById('expand-'+id);
   if(!row) return;
@@ -3531,7 +3479,6 @@ async function duplicateTrade(id){
   trades.unshift(copy);
   save();
   syncToSheet('saveTrade', copy);
-  // Copia screenshots no IndexedDB
   try {
     for(const slot of SHOT_SLOTS){
       const data = await ScreenshotDB.get(String(id) + ':' + slot);
@@ -3688,18 +3635,6 @@ function renderSettingsPage(){
   renderAccountsSection();
   renderMultipliersSection();
 }
-let editingAccountId = null;
-
-function openAccountPanel(accountId = null){
-  editingAccountId = accountId;
-  document.getElementById('accountPanelTitle').textContent = accountId ? 'Editar Conta' : 'Nova Conta';
-  const acc = accountId ? getAccountById(accountId) : null;
-  document.getElementById('acc-name').value = acc ? acc.name : '';
-  document.getElementById('acc-balance').value = acc ? (acc.balance || '') : '';
-  document.getElementById('acc-broker').value = acc ? (acc.broker || '') : '';
-  document.getElementById('acc-color').value = acc ? (acc.color || '#3b82f6') : '#3b82f6';
-  openPanel('accountPanel');
-}
 
 let editingAccountId = null;
 
@@ -3756,7 +3691,7 @@ function deleteAccount(id){
   if(!acc) return;
   const tradesInAccount = trades.filter(t => t.accountId === id).length;
   const msg = tradesInAccount > 0
-    ? `Esta conta tem ${tradesInAccount} trade(s). Excluir a conta e todos os trades dela?`
+    ? 'Esta conta tem ' + tradesInAccount + ' trade(s). Excluir a conta e todos os trades dela?'
     : 'Excluir esta conta?';
   if(!confirm(msg)) return;
   trades = trades.filter(t => t.accountId !== id);
@@ -3827,7 +3762,6 @@ function renderAccountsSection(){
   }
   if(delBtn) delBtn.style.display = accounts.length > 1 ? 'inline-flex' : 'none';
 }
-}
 
 function renderMultipliersSection(){
   const grid = document.getElementById('multipliersGrid');
@@ -3868,7 +3802,6 @@ function resetMultipliers(){
   renderMultipliersSection();
   showToast('Multiplicadores restaurados.');
 }
-
 
 // ===========================
 // EXPORT / IMPORT
@@ -3931,7 +3864,6 @@ function importData(event){
       if(data.reviews) reviews = data.reviews;
       if(data.systemData) systemData = data.systemData;
       if(data.settings) settings = data.settings;
-      // Restaura screenshots no IndexedDB
       if(data.screenshots){
         for(const tradeId in data.screenshots){
           const shots = data.screenshots[tradeId];
@@ -3941,7 +3873,7 @@ function importData(event){
         }
       }
       save();
-      document.getElementById('accountName').textContent = settings.accountName || 'Minha conta';
+      renderActiveAccountUI();
       renderDashboard();
       showToast('Dados importados com sucesso!');
     } catch(err){
@@ -3959,7 +3891,11 @@ function clearAllData(){
   trades = []; watchlist = []; reviews = [];
   systemData = getDefaultSystem();
   settings = { accountName:'Minha conta', accountBalance:10000 };
+  accounts = [];
+  activeAccountId = null;
+  migrateToAccounts();
   save();
+  renderActiveAccountUI();
   renderDashboard();
   showToast('Dados apagados.');
 }
@@ -3993,9 +3929,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch(e){
     console.warn('IndexedDB init failed:', e);
     showToast('⚠ Navegador sem suporte a IndexedDB. Screenshots serão temporárias.');
+  }
+
   migrateToAccounts();
   renderActiveAccountUI();
-  }
 
   document.querySelectorAll('[data-asset-select]').forEach(sel => {
     const emptyLabel = sel.dataset.emptyLabel || 'Todos';
@@ -4058,14 +3995,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-    ['t-p1-price','t-p1-pct','t-p2-price','t-p2-pct','t-p3-price','t-p3-pct'].forEach(id => {
+  ['t-p1-price','t-p1-pct','t-p2-price','t-p2-pct','t-p3-price','t-p3-pct'].forEach(id => {
     const el = document.getElementById(id);
     if(el){
       el.addEventListener('change', recalcRAndPnl);
       el.addEventListener('input', recalcRAndPnl);
     }
   });
-  // Auto-cálculo do Holding Period
+
   ['t-date','t-entrytime','t-exitdate','t-exittime'].forEach(id => {
     const el = document.getElementById(id);
     if(el){
@@ -4073,31 +4010,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       el.addEventListener('input', recalcHolding);
     }
   });
-  
-  const acc = document.getElementById('accountName');
-  if(acc) acc.textContent = settings.accountName || 'Minha conta';
-
-  const balInput = document.getElementById('accountBalance');
-  if(balInput) balInput.value = settings.accountBalance || '';
 
   if(DB.get('sj_sidebar_collapsed', false)){
     document.getElementById('sidebar').classList.add('collapsed');
     document.body.classList.add('collapsed');
   }
 
-  // Inicializa selects de filtro do Journal
-  ['jf-month','jf-asset','jf-status'].forEach(id => {
-    const el = document.getElementById(id);
-    if(el && el.value) { /* nada */ }
-  });
-
   // Sempre abre no Dashboard
-const dashBtn = document.querySelector('.nav-item[data-page="dashboard"]');
-if(dashBtn) dashBtn.classList.add('active');
-document.getElementById('page-dashboard').classList.add('active');
-renderDashboard();
-  
-  // Colar imagem com Ctrl+V
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const dashPage = document.getElementById('page-dashboard');
+  if(dashPage) dashPage.classList.add('active');
+  const dashBtn = document.querySelector('.nav-item[data-page="dashboard"]');
+  if(dashBtn) dashBtn.classList.add('active');
+  renderDashboard();
+
   document.addEventListener('paste', async e => {
     const panel = document.getElementById('tradePanel');
     if(!panel || !panel.classList.contains('open')) return;
@@ -4105,7 +4032,6 @@ renderDashboard();
     const items = e.clipboardData && e.clipboardData.items;
     if(!items) return;
 
-    // Se estiver em input/textarea e houver texto puro, deixa o paste acontecer
     const target = e.target;
     const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
     let imageFile = null;
@@ -4119,7 +4045,6 @@ renderDashboard();
 
     e.preventDefault();
 
-    // Escolhe slot: último focado, ou primeiro vazio
     let targetSlot = lastFocusedSlot;
     if(!targetSlot || currentScreenshots[SHOT_INDEX[targetSlot]]){
       targetSlot = SHOT_SLOTS.find(s => !currentScreenshots[SHOT_INDEX[s]]);
@@ -4148,20 +4073,17 @@ renderDashboard();
     }
   });
 
-  // Popula o top-bar com a conta ativa
   renderActiveAccountUI();
 });
 
-// ---------- ONLINE / OFFLINE ----------
 window.addEventListener('online', () => {
   updateSyncStatusUI();
-  // Processa a fila automaticamente ao voltar online
   setTimeout(() => processSyncQueue(), 500);
 });
 window.addEventListener('offline', () => {
   updateSyncStatusUI();
-});  
-  
+});
+
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
@@ -4170,34 +4092,27 @@ window.addEventListener('resize', () => {
   }, 120);
 });
 </script>
- <script>
-// ============================================================
-// PWA — Registro + Auto-update
-// ============================================================
+<script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('./sw.js', {
-        updateViaCache: 'none' // Ignora HTTP cache ao buscar o sw.js
+        updateViaCache: 'none'
       });
 
-      // Força verificação de atualização a cada 30 minutos
       setInterval(() => registration.update().catch(() => {}), 30 * 60 * 1000);
 
-      // Verifica quando o app volta ao foco (você abre o celular depois de horas)
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           registration.update().catch(() => {});
         }
       });
 
-      // Detecta quando uma nova versão do SW foi instalada
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         if (!newWorker) return;
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // Há uma nova versão pronta
             handleUpdateReady();
           }
         });
@@ -4209,12 +4124,10 @@ if ('serviceWorker' in navigator) {
     }
   });
 
-  // Se o controlador do SW trocar (nova versão assumiu), recarrega a página
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (refreshing) return;
     refreshing = true;
-    // Não recarrega se o usuário estiver com um painel aberto
     const panelOpen = document.querySelector('.panel.open');
     if (panelOpen) {
       showUpdateToast();
@@ -4224,7 +4137,6 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Toast específico de atualização (recarrega quando clicado)
 function showUpdateToast() {
   const el = document.createElement('div');
   el.id = 'updateToast';
@@ -4232,17 +4144,14 @@ function showUpdateToast() {
   el.innerHTML = '<span>✨ Nova versão disponível</span><span style="font-weight:600;text-decoration:underline">Recarregar</span>';
   el.onclick = () => window.location.reload();
   document.body.appendChild(el);
-  // Some sozinho depois de 30s
   setTimeout(() => el.remove(), 30000);
 }
 
-// Se a versão anterior foi carregada com painel aberto, avisa quando estiver pronto
 function handleUpdateReady() {
   const panelOpen = document.querySelector('.panel.open');
   if (panelOpen) {
     showUpdateToast();
   }
-  // Se não houver painel aberto, o controllerchange cuida do reload
 }
 </script>
 </body>
