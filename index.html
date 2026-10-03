@@ -648,21 +648,15 @@ textarea.form-control{resize:vertical;min-height:90px}
     <div class="page-header"><h1>Configurações & Backup</h1></div>
 
     <div class="settings-section">
-      <div class="settings-title">Conta</div>
-      <div class="form-grid cols2" style="max-width:600px">
-        <div class="form-group">
-          <label for="accountInput">Nome da Conta</label>
-          <input class="form-control" id="accountInput" placeholder="Nome do trader...">
-        </div>
-        <div class="form-group">
-          <label for="accountBalance">Saldo da Conta ($)</label>
-          <input class="form-control" id="accountBalance" type="number" step="any" placeholder="10000">
-        </div>
+      <div class="settings-title">Contas de Trade</div>
+      <div class="info-box">
+        Cadastre uma conta para cada broker ou propósito (Real, Demo, Prop Firm). Tudo que você registrar ficará vinculado à <strong>conta ativa</strong>. Clique em uma conta para ativá-la.
       </div>
-      <button class="btn btn-primary btn-sm" onclick="saveAccountName()" style="margin-top:14px">Salvar</button>
+      <div id="accountsList"></div>
+      <div class="flex gap-2" style="margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="openAccountPanel()">+ Nova Conta</button>
+      </div>
     </div>
-
-    <div class="settings-section">
 
     <div class="settings-section">
       <div class="settings-title">Multiplicadores por Ativo</div>
@@ -904,6 +898,42 @@ textarea.form-control{resize:vertical;min-height:90px}
   <div class="panel-footer">
     <button class="btn btn-primary" id="tradeSaveBtn" onclick="saveTrade()">Salvar Operação</button>
     <button class="btn btn-ghost" onclick="closePanel('tradePanel')">Cancelar</button>
+  </div>
+</div>
+
+<div class="panel panel-sm" id="accountPanel">
+  <div class="panel-header">
+    <h2 id="accountPanelTitle">Nova Conta</h2>
+    <button class="panel-close" onclick="closePanel('accountPanel')" aria-label="Fechar">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="panel-body">
+    <div class="form-section">
+      <div class="form-section-title">Informações</div>
+      <div class="form-group mb-2">
+        <label for="acc-name">Nome da Conta</label>
+        <input class="form-control" id="acc-name" placeholder="Ex: Prop Firm A, Real, Demo">
+      </div>
+      <div class="form-grid cols2 mb-2">
+        <div class="form-group">
+          <label for="acc-balance">Saldo Inicial ($)</label>
+          <input class="form-control" id="acc-balance" type="number" step="any" placeholder="10000">
+        </div>
+        <div class="form-group">
+          <label for="acc-broker">Broker (opcional)</label>
+          <input class="form-control" id="acc-broker" placeholder="Ex: FTMO">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="acc-color">Cor</label>
+        <input class="form-control" id="acc-color" type="color" value="#3b82f6" style="height:38px;padding:4px;cursor:pointer">
+      </div>
+    </div>
+  </div>
+  <div class="panel-footer">
+    <button class="btn btn-primary" onclick="saveAccount()">Salvar</button>
+    <button class="btn btn-ghost" onclick="closePanel('accountPanel')">Cancelar</button>
   </div>
 </div>
 
@@ -1292,8 +1322,10 @@ async function loadFromSheet(silent){
     if(data.system && Object.keys(data.system).length) systemData = data.system;
     if(data.settings) settings = Object.assign({}, settings, data.settings);
     normalizeAllDates();
+    ensureTradeAccounts();
     save();
     normalizeAllDates();
+    ensureTradeAccounts();
     const acc = document.getElementById('accountName');
     if(acc) acc.textContent = settings.accountName || 'Minha conta';
       // Inicializa status de sincronização
@@ -1523,6 +1555,63 @@ let watchlist = DB.get('sj_watchlist', []);
 let reviews = DB.get('sj_reviews', []);
 let systemData = DB.get('sj_system', getDefaultSystem());
 let settings = DB.get('sj_settings', { accountName:'Minha conta', accountBalance: 10000 });
+let accounts = DB.get('sj_accounts', []);
+let activeAccountId = DB.get('sj_active_account', null);
+
+function getActiveAccount(){
+  return accounts.find(a => a.id === activeAccountId) || accounts[0] || null;
+}
+function getAccountById(id){
+  return accounts.find(a => a.id === id) || null;
+}
+function getAccountName(id){
+  const a = getAccountById(id);
+  return a ? a.name : '—';
+}
+
+function migrateToAccounts(){
+  let changed = false;
+  if(!accounts || !accounts.length){
+    const defaultAcc = {
+      id: 'acc_' + Date.now(),
+      name: settings.accountName || 'Minha conta',
+      balance: parseFloat(settings.accountBalance) || 10000,
+      broker: '',
+      currency: 'USD',
+      color: '#3b82f6',
+      createdAt: new Date().toISOString()
+    };
+    accounts = [defaultAcc];
+    activeAccountId = defaultAcc.id;
+    DB.set('sj_accounts', accounts);
+    DB.set('sj_active_account', activeAccountId);
+    changed = true;
+  }
+  if(!activeAccountId && accounts.length){
+    activeAccountId = accounts[0].id;
+    DB.set('sj_active_account', activeAccountId);
+    changed = true;
+  }
+  // Atribui accountId a trades sem conta
+  trades.forEach(t => {
+    if(!t.accountId){
+      t.accountId = activeAccountId;
+      changed = true;
+    }
+  });
+  if(changed) save();
+}
+
+function ensureTradeAccounts(){
+  let changed = false;
+  trades.forEach(t => {
+    if(!t.accountId){
+      t.accountId = activeAccountId;
+      changed = true;
+    }
+  });
+  if(changed) save();
+}
 let editingTrade = null;
 let editingWatch = null;
 let currentScreenshots = [];
@@ -1541,6 +1630,8 @@ function save(){
   DB.set('sj_reviews', reviews);
   DB.set('sj_system', systemData);
   DB.set('sj_settings', settings);
+  DB.set('sj_accounts', accounts);
+  DB.set('sj_active_account', activeAccountId);
 }
 
 function getDefaultSystem(){
@@ -2157,6 +2248,7 @@ async function saveTrade(){
     const tradeId = editingTrade || Date.now().toString();
     const trade = {
       id: tradeId,
+      accountId: activeAccountId,
       date: document.getElementById('t-date').value,
       asset: document.getElementById('t-asset').value,
       dir: document.getElementById('t-dir').value,
@@ -2341,6 +2433,7 @@ function collectDashboardFilters(){
 
 function getFilteredTrades(filters = {}, source = trades){
   return source.filter(t => {
+    if(activeAccountId && t.accountId && t.accountId !== activeAccountId) return false;
     const date = t.date || '';
     if(filters.month && date.substring(0,7) !== filters.month) return false;
     if(filters.from && (!date || date < filters.from)) return false;
@@ -2480,7 +2573,8 @@ function renderDashboard(){
   renderConfluencePerf(filtered);
   renderEmotionalPerf(filtered);
   renderHeatmap(filtered);
-  renderLossStreakAlert(trades); // sempre considera todos os trades, ignora filtros
+  // Loss streak considera apenas a conta ativa
+  renderLossStreakAlert(trades.filter(t => !activeAccountId || !t.accountId || t.accountId === activeAccountId));
 }
 
 function renderEquityChart(tradeList){
@@ -3040,6 +3134,7 @@ function collectJournalFilters(){
 
 function getFilteredJournalTrades(){
   return trades.filter(t => {
+    if(activeAccountId && t.accountId && t.accountId !== activeAccountId) return false;
     const date = t.date || '';
     if(journalFilters.month && date.substring(0,7) !== journalFilters.month) return false;
     if(journalFilters.asset && t.asset !== journalFilters.asset) return false;
@@ -3542,18 +3637,124 @@ function deleteSystemItem(key,i){
 // SETTINGS
 // ===========================
 function renderSettingsPage(){
-  document.getElementById('accountInput').value = settings.accountName || '';
-  const bal = document.getElementById('accountBalance');
-  if(bal) bal.value = settings.accountBalance || '';
+  renderAccountsList();
   renderMultipliersSection();
 }
-function saveAccountName(){
-  settings.accountName = document.getElementById('accountInput').value;
-  settings.accountBalance = parseFloat(document.getElementById('accountBalance').value) || 0;
+let editingAccountId = null;
+
+function openAccountPanel(accountId = null){
+  editingAccountId = accountId;
+  document.getElementById('accountPanelTitle').textContent = accountId ? 'Editar Conta' : 'Nova Conta';
+  const acc = accountId ? getAccountById(accountId) : null;
+  document.getElementById('acc-name').value = acc ? acc.name : '';
+  document.getElementById('acc-balance').value = acc ? (acc.balance || '') : '';
+  document.getElementById('acc-broker').value = acc ? (acc.broker || '') : '';
+  document.getElementById('acc-color').value = acc ? (acc.color || '#3b82f6') : '#3b82f6';
+  openPanel('accountPanel');
+}
+
+function saveAccount(){
+  const name = document.getElementById('acc-name').value.trim();
+  if(!name){ showToast('Informe um nome para a conta.'); return; }
+  const balance = parseFloat(document.getElementById('acc-balance').value) || 0;
+  const broker = document.getElementById('acc-broker').value.trim();
+  const color = document.getElementById('acc-color').value || '#3b82f6';
+
+  if(editingAccountId){
+    const acc = getAccountById(editingAccountId);
+    if(acc){
+      acc.name = name;
+      acc.balance = balance;
+      acc.broker = broker;
+      acc.color = color;
+    }
+  } else {
+    const newAcc = {
+      id: 'acc_' + Date.now(),
+      name, balance, broker, color,
+      currency: 'USD',
+      createdAt: new Date().toISOString()
+    };
+    accounts.push(newAcc);
+    if(!activeAccountId) activeAccountId = newAcc.id;
+  }
+  DB.set('sj_accounts', accounts);
+  DB.set('sj_active_account', activeAccountId);
+  closePanel('accountPanel');
+  renderSettingsPage();
+  renderActiveAccountUI();
+  renderDashboard();
+  showToast('Conta salva.');
+}
+
+function setActiveAccount(id){
+  const acc = getAccountById(id);
+  if(!acc) return;
+  activeAccountId = id;
+  DB.set('sj_active_account', activeAccountId);
+  renderSettingsPage();
+  renderActiveAccountUI();
+  renderDashboard();
+  renderJournal();
+  showToast('Conta ativa: ' + acc.name);
+}
+
+function deleteAccount(id){
+  if(accounts.length <= 1){ showToast('Você precisa ter ao menos uma conta.'); return; }
+  const acc = getAccountById(id);
+  if(!acc) return;
+  const tradesInAccount = trades.filter(t => t.accountId === id).length;
+  const msg = tradesInAccount > 0
+    ? `Esta conta tem ${tradesInAccount} trade(s) registrado(s). Excluir a conta e todos os trades dela?`
+    : 'Excluir esta conta?';
+  if(!confirm(msg)) return;
+  trades = trades.filter(t => t.accountId !== id);
+  accounts = accounts.filter(a => a.id !== id);
+  if(activeAccountId === id) activeAccountId = accounts[0].id;
+  DB.set('sj_accounts', accounts);
+  DB.set('sj_active_account', activeAccountId);
   save();
-  syncToSheet('saveSettings', settings);
-  document.getElementById('accountName').textContent = settings.accountName;
-  showToast('Salvo!');
+  renderSettingsPage();
+  renderActiveAccountUI();
+  renderDashboard();
+  renderJournal();
+  showToast('Conta excluída.');
+}
+
+function renderAccountsList(){
+  const el = document.getElementById('accountsList');
+  if(!el) return;
+  if(!accounts.length){
+    el.innerHTML = '<div class="text-sm text-muted">Nenhuma conta cadastrada.</div>';
+    return;
+  }
+  el.innerHTML = accounts.map(acc => {
+    const isActive = acc.id === activeAccountId;
+    const tradesCount = trades.filter(t => t.accountId === acc.id).length;
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg);border:1px solid '+(isActive?'var(--accent2)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="setActiveAccount(\''+esc(acc.id)+'\')">'+
+      '<div style="width:10px;height:10px;border-radius:50%;background:'+esc(acc.color||'#3b82f6')+';flex-shrink:0"></div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-weight:500;font-size:13px">'+esc(acc.name)+(isActive?' <span style="font-size:10px;color:var(--accent);margin-left:4px">● ATIVA</span>':'')+'</div>'+
+        '<div style="font-size:11px;color:var(--muted)">'+
+          (acc.broker ? esc(acc.broker)+' · ' : '')+
+          'Saldo: $'+((acc.balance || 0).toLocaleString('pt-BR'))+
+          ' · '+tradesCount+' trade'+(tradesCount !== 1 ? 's' : '')+
+        '</div>'+
+      '</div>'+
+      '<div class="flex gap-2" onclick="event.stopPropagation()">'+
+        '<button class="btn btn-ghost btn-sm" onclick="openAccountPanel(\''+esc(acc.id)+'\')">Editar</button>'+
+        (accounts.length > 1 ? '<button class="btn btn-danger btn-sm" onclick="deleteAccount(\''+esc(acc.id)+'\')">Excluir</button>' : '')+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+function renderActiveAccountUI(){
+  const acc = getActiveAccount();
+  const el = document.getElementById('accountName');
+  if(el && acc){
+    el.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:'+esc(acc.color||'#3b82f6')+'"></span>'+esc(acc.name)+'</span>';
+  }
 }
 
 function renderMultipliersSection(){
@@ -3720,6 +3921,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch(e){
     console.warn('IndexedDB init failed:', e);
     showToast('⚠ Navegador sem suporte a IndexedDB. Screenshots serão temporárias.');
+  migrateToAccounts();
+  renderActiveAccountUI();
   }
 
   document.querySelectorAll('[data-asset-select]').forEach(sel => {
