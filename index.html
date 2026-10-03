@@ -1320,7 +1320,20 @@ async function loadFromSheet(silent){
     if(Array.isArray(data.watchlist)) watchlist = data.watchlist;
     if(Array.isArray(data.reviews))   reviews   = data.reviews;
     if(data.system && Object.keys(data.system).length) systemData = data.system;
-    if(data.settings) settings = Object.assign({}, settings, data.settings);
+    if(data.settings){
+      const incoming = data.settings;
+      // Contas vêm do Sheets
+      if(Array.isArray(incoming.accounts) && incoming.accounts.length){
+        accounts = incoming.accounts;
+        // Se a conta ativa local não existe mais, escolhe a primeira
+        if(!accounts.find(a => a.id === activeAccountId)){
+          activeAccountId = accounts[0].id;
+          DB.set('sj_active_account', activeAccountId);
+        }
+      }
+      settings = Object.assign({}, settings, incoming);
+      settings.accounts = accounts;
+    }
     normalizeAllDates();
     ensureTradeAccounts();
     save();
@@ -1629,9 +1642,10 @@ function save(){
   DB.set('sj_watchlist', watchlist);
   DB.set('sj_reviews', reviews);
   DB.set('sj_system', systemData);
+  settings.accounts = accounts;   // viaja junto com o settings
   DB.set('sj_settings', settings);
-  DB.set('sj_accounts', accounts);
-  DB.set('sj_active_account', activeAccountId);
+  DB.set('sj_accounts', accounts);         // retrocompat
+  DB.set('sj_active_account', activeAccountId); // local por dispositivo
 }
 
 function getDefaultSystem(){
