@@ -72,8 +72,23 @@ nav{flex:1;padding:8px 8px;overflow-y:auto;overflow-x:hidden}
 }
 
 /* MAIN */
-#main{margin-left:var(--sidebar);flex:1;height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease;-webkit-overflow-scrolling:touch}
+#main{margin-left:var(--sidebar);flex:1;height:100vh;height:100dvh;overflow-y:auto;overflow-x:hidden;transition:margin-left .25s ease;-webkit-overflow-scrolling:touch;padding-top:44px}
 body.collapsed #main{margin-left:56px}
+
+/* TOP BAR — conta ativa sempre visível */
+.top-bar{position:fixed;top:0;left:var(--sidebar);right:0;z-index:90;background:rgba(15,17,21,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:8px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;transition:left .25s ease}
+body.collapsed .top-bar{left:56px}
+.top-bar-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.top-bar-right{display:flex;align-items:center;gap:8px}
+.top-acc-dot{width:8px;height:8px;border-radius:50%;background:var(--accent2);flex-shrink:0}
+.top-acc-select{background:transparent;border:1px solid var(--border2);color:var(--text);font-family:inherit;font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer;outline:none;transition:border-color .15s;max-width:220px}
+.top-acc-select:hover,.top-acc-select:focus{border-color:var(--accent2)}
+@media(max-width:760px){
+  .top-bar{padding:6px 12px;min-height:40px}
+  #main{padding-top:40px}
+  .top-bar-label{display:none}
+  .top-acc-select{font-size:11px;max-width:170px}
+}
 .page{display:none;padding:32px 36px;min-height:100%}
 .page.active{display:block}
 .page-header{margin-bottom:28px}
@@ -461,6 +476,14 @@ textarea.form-control{resize:vertical;min-height:90px}
   </div>
 </aside>
 
+<div class="top-bar" id="topBar">
+  <div class="top-bar-label">Conta ativa</div>
+  <div class="top-bar-right">
+    <span class="top-acc-dot" id="topAccDot"></span>
+    <select id="topAccountSelect" class="top-acc-select" onchange="setActiveAccount(this.value)" title="Trocar conta"></select>
+  </div>
+</div>
+
 <main id="main">
 
   <div id="page-dashboard" class="page active">
@@ -650,11 +673,22 @@ textarea.form-control{resize:vertical;min-height:90px}
     <div class="settings-section">
       <div class="settings-title">Contas de Trade</div>
       <div class="info-box">
-        Cadastre uma conta para cada broker ou propósito (Real, Demo, Prop Firm). Tudo que você registrar ficará vinculado à <strong>conta ativa</strong>. Clique em uma conta para ativá-la.
+        Cada broker ou propósito (Real, Demo, Prop Firm) pode ter sua própria conta. Tudo que você registrar ficará vinculado à <strong>conta ativa</strong>. As contas sincronizam entre dispositivos.
       </div>
-      <div id="accountsList"></div>
+      <div class="form-grid cols2" style="max-width:600px">
+        <div class="form-group">
+          <label for="accountSelect">Conta Ativa</label>
+          <select id="accountSelect" class="form-control" onchange="setActiveAccount(this.value)"></select>
+        </div>
+        <div class="form-group">
+          <label>Detalhes</label>
+          <div id="accountPreview" style="font-size:12px;color:var(--muted);padding-top:9px">—</div>
+        </div>
+      </div>
       <div class="flex gap-2" style="margin-top:14px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="openAccountPanel()">+ Nova Conta</button>
+        <button class="btn btn-ghost btn-sm" onclick="editActiveAccount()">Editar Ativa</button>
+        <button class="btn btn-danger btn-sm" id="deleteAccountBtn" onclick="deleteActiveAccount()">Excluir Ativa</button>
       </div>
     </div>
 
@@ -3651,9 +3685,22 @@ function deleteSystemItem(key,i){
 // SETTINGS
 // ===========================
 function renderSettingsPage(){
-  renderAccountsList();
+  renderAccountsSection();
   renderMultipliersSection();
 }
+let editingAccountId = null;
+
+function openAccountPanel(accountId = null){
+  editingAccountId = accountId;
+  document.getElementById('accountPanelTitle').textContent = accountId ? 'Editar Conta' : 'Nova Conta';
+  const acc = accountId ? getAccountById(accountId) : null;
+  document.getElementById('acc-name').value = acc ? acc.name : '';
+  document.getElementById('acc-balance').value = acc ? (acc.balance || '') : '';
+  document.getElementById('acc-broker').value = acc ? (acc.broker || '') : '';
+  document.getElementById('acc-color').value = acc ? (acc.color || '#3b82f6') : '#3b82f6';
+  openPanel('accountPanel');
+}
+
 let editingAccountId = null;
 
 function openAccountPanel(accountId = null){
@@ -3676,24 +3723,14 @@ function saveAccount(){
 
   if(editingAccountId){
     const acc = getAccountById(editingAccountId);
-    if(acc){
-      acc.name = name;
-      acc.balance = balance;
-      acc.broker = broker;
-      acc.color = color;
-    }
+    if(acc){ acc.name = name; acc.balance = balance; acc.broker = broker; acc.color = color; }
   } else {
-    const newAcc = {
-      id: 'acc_' + Date.now(),
-      name, balance, broker, color,
-      currency: 'USD',
-      createdAt: new Date().toISOString()
-    };
+    const newAcc = { id: 'acc_' + Date.now(), name, balance, broker, color, currency: 'USD', createdAt: new Date().toISOString() };
     accounts.push(newAcc);
     if(!activeAccountId) activeAccountId = newAcc.id;
   }
-  DB.set('sj_accounts', accounts);
-  DB.set('sj_active_account', activeAccountId);
+  save();
+  syncToSheet('saveSettings', settings);
   closePanel('accountPanel');
   renderSettingsPage();
   renderActiveAccountUI();
@@ -3706,10 +3743,10 @@ function setActiveAccount(id){
   if(!acc) return;
   activeAccountId = id;
   DB.set('sj_active_account', activeAccountId);
-  renderSettingsPage();
   renderActiveAccountUI();
+  if(document.getElementById('page-settings').classList.contains('active')) renderSettingsPage();
   renderDashboard();
-  renderJournal();
+  if(document.getElementById('page-journal').classList.contains('active')) renderJournal();
   showToast('Conta ativa: ' + acc.name);
 }
 
@@ -3719,15 +3756,15 @@ function deleteAccount(id){
   if(!acc) return;
   const tradesInAccount = trades.filter(t => t.accountId === id).length;
   const msg = tradesInAccount > 0
-    ? `Esta conta tem ${tradesInAccount} trade(s) registrado(s). Excluir a conta e todos os trades dela?`
+    ? `Esta conta tem ${tradesInAccount} trade(s). Excluir a conta e todos os trades dela?`
     : 'Excluir esta conta?';
   if(!confirm(msg)) return;
   trades = trades.filter(t => t.accountId !== id);
   accounts = accounts.filter(a => a.id !== id);
   if(activeAccountId === id) activeAccountId = accounts[0].id;
-  DB.set('sj_accounts', accounts);
   DB.set('sj_active_account', activeAccountId);
   save();
+  syncToSheet('saveSettings', settings);
   renderSettingsPage();
   renderActiveAccountUI();
   renderDashboard();
@@ -3735,40 +3772,61 @@ function deleteAccount(id){
   showToast('Conta excluída.');
 }
 
-function renderAccountsList(){
-  const el = document.getElementById('accountsList');
-  if(!el) return;
-  if(!accounts.length){
-    el.innerHTML = '<div class="text-sm text-muted">Nenhuma conta cadastrada.</div>';
-    return;
-  }
-  el.innerHTML = accounts.map(acc => {
-    const isActive = acc.id === activeAccountId;
-    const tradesCount = trades.filter(t => t.accountId === acc.id).length;
-    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg);border:1px solid '+(isActive?'var(--accent2)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="setActiveAccount(\''+esc(acc.id)+'\')">'+
-      '<div style="width:10px;height:10px;border-radius:50%;background:'+esc(acc.color||'#3b82f6')+';flex-shrink:0"></div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-weight:500;font-size:13px">'+esc(acc.name)+(isActive?' <span style="font-size:10px;color:var(--accent);margin-left:4px">● ATIVA</span>':'')+'</div>'+
-        '<div style="font-size:11px;color:var(--muted)">'+
-          (acc.broker ? esc(acc.broker)+' · ' : '')+
-          'Saldo: $'+((acc.balance || 0).toLocaleString('pt-BR'))+
-          ' · '+tradesCount+' trade'+(tradesCount !== 1 ? 's' : '')+
-        '</div>'+
-      '</div>'+
-      '<div class="flex gap-2" onclick="event.stopPropagation()">'+
-        '<button class="btn btn-ghost btn-sm" onclick="openAccountPanel(\''+esc(acc.id)+'\')">Editar</button>'+
-        (accounts.length > 1 ? '<button class="btn btn-danger btn-sm" onclick="deleteAccount(\''+esc(acc.id)+'\')">Excluir</button>' : '')+
-      '</div>'+
-    '</div>';
-  }).join('');
-}
+function editActiveAccount(){ if(activeAccountId) openAccountPanel(activeAccountId); }
+function deleteActiveAccount(){ if(activeAccountId) deleteAccount(activeAccountId); }
 
 function renderActiveAccountUI(){
   const acc = getActiveAccount();
-  const el = document.getElementById('accountName');
-  if(el && acc){
-    el.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:'+esc(acc.color||'#3b82f6')+'"></span>'+esc(acc.name)+'</span>';
+  const dotEl = document.getElementById('topAccDot');
+  const topSel = document.getElementById('topAccountSelect');
+  const accNameEl = document.getElementById('accountName');
+
+  if(!acc){
+    if(topSel) topSel.innerHTML = '<option>Nenhuma conta</option>';
+    if(accNameEl) accNameEl.textContent = 'Sem conta';
+    return;
   }
+
+  if(dotEl) dotEl.style.background = acc.color || '#3b82f6';
+
+  if(topSel){
+    topSel.innerHTML = accounts.map(a =>
+      '<option value="'+esc(a.id)+'"'+(a.id === activeAccountId ? ' selected' : '')+'>'+esc(a.name)+'</option>'
+    ).join('');
+  }
+
+  if(accNameEl){
+    accNameEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:'+esc(acc.color||'#3b82f6')+'"></span>'+esc(acc.name)+'</span>';
+  }
+}
+
+function renderAccountsSection(){
+  const sel = document.getElementById('accountSelect');
+  const preview = document.getElementById('accountPreview');
+  const delBtn = document.getElementById('deleteAccountBtn');
+  if(!sel) return;
+
+  if(!accounts.length){
+    sel.innerHTML = '<option value="">Nenhuma conta cadastrada</option>';
+    if(preview) preview.textContent = '—';
+    if(delBtn) delBtn.style.display = 'none';
+    return;
+  }
+
+  sel.innerHTML = accounts.map(a =>
+    '<option value="'+esc(a.id)+'"'+(a.id === activeAccountId ? ' selected' : '')+'>'+esc(a.name)+'</option>'
+  ).join('');
+
+  const acc = getActiveAccount();
+  if(acc && preview){
+    const count = trades.filter(t => t.accountId === acc.id).length;
+    preview.innerHTML =
+      (acc.broker ? esc(acc.broker)+' · ' : '')+
+      'Saldo: $'+((acc.balance || 0).toLocaleString('pt-BR'))+
+      ' · '+count+' trade'+(count !== 1 ? 's' : '');
+  }
+  if(delBtn) delBtn.style.display = accounts.length > 1 ? 'inline-flex' : 'none';
+}
 }
 
 function renderMultipliersSection(){
@@ -4089,6 +4147,9 @@ renderDashboard();
       else if(document.querySelector('.panel.open')) closeAllPanels();
     }
   });
+
+  // Popula o top-bar com a conta ativa
+  renderActiveAccountUI();
 });
 
 // ---------- ONLINE / OFFLINE ----------
