@@ -3817,14 +3817,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(el && el.value) { /* nada */ }
   });
 
-  const lastPage = DB.get('sj_lastpage', 'dashboard');
-  const btn = document.querySelector('.nav-item[data-page="'+lastPage+'"]');
-  if(btn && lastPage !== 'dashboard'){
-    navigate(lastPage, btn);
-  } else {
-    renderDashboard();
-  }
-
+  // Sempre abre no Dashboard
+const dashBtn = document.querySelector('.nav-item[data-page="dashboard"]');
+if(dashBtn) dashBtn.classList.add('active');
+document.getElementById('page-dashboard').classList.add('active');
+renderDashboard();
+  
   // Colar imagem com Ctrl+V
   document.addEventListener('paste', async e => {
     const panel = document.getElementById('tradePanel');
